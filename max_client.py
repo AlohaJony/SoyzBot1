@@ -58,21 +58,27 @@ class MaxBotClient:
     def upload_file(self, file_path: str, file_type: str) -> Optional[str]:
         import os
         import time
-        import xml.etree.ElementTree as ET
         from requests.exceptions import RequestException
 
         file_size = os.path.getsize(file_path)
         logger.error(f"Uploading file: {os.path.basename(file_path)}, size: {file_size} bytes, type: {file_type}")
 
-        # 1. Получаем upload_url от API MAX
+        # 1. Получаем upload_url и, возможно, токен от API MAX
         params = {"type": file_type}
         upload_info = self._request("POST", "/uploads", params=params)
-        upload_info = self._request("POST", "/uploads", params=params)
-        logger.error(f"Full upload_info: {upload_info}")  # посмотрим, есть ли там token
+        logger.error(f"Full upload_info: {upload_info}")
+
+        # 2. Для video и audio токен может прийти сразу
+        if file_type in ("video", "audio") and "token" in upload_info:
+            token = upload_info["token"]
+            logger.error(f"Token received directly from upload_info: {token}")
+            return token
+
+        # 3. Если токена нет (например, для image или file), загружаем файл на CDN
+        upload_url = upload_info["url"]
         logger.error(f"Upload URL: {upload_url}")
 
-        # 2. Загружаем файл на CDN
-        max_retries = 2  # Уменьшим до 2, так как первая попытка уже успешна
+        max_retries = 2
         for attempt in range(max_retries):
             try:
                 with open(file_path, "rb") as f:
@@ -80,7 +86,7 @@ class MaxBotClient:
                     resp = requests.post(upload_url, files=files, timeout=60)
 
                 logger.error(f"Attempt {attempt+1}: status {resp.status_code}")
-                logger.error(f"Response headers: {dict(resp.headers)}")  # Логируем заголовки
+                logger.error(f"Response headers: {dict(resp.headers)}")
                 logger.error(f"Response body: {resp.text}")
 
                 resp.raise_for_status()
@@ -89,35 +95,16 @@ class MaxBotClient:
                 try:
                     result = resp.json()
                     logger.error(f"JSON response: {result}")
-                    token = result.get("token")
-                    if token:
-                        return token
+                    # Возвращаем токен (для video/audio он должен быть в result)
+                    if file_type in ("video", "audio"):
+                        return result.get("token")
+                    else:
+                        return result.get("token") or result.get("photo_id")
                 except ValueError:
-                    # Если не JSON, возможно, это XML
+                    # Если не JSON, возможно, это XML (для некоторых CDN)
                     logger.error("Response is not JSON, trying XML")
-                    # Парсим XML
-                    root = ET.fromstring(resp.text)
-                    # Ищем retval или любой другой значимый элемент
-                    retval = root.text if root.tag == 'retval' else None
-                    if retval is not None:
-                        logger.error(f"retval = {retval}")
-                        # Здесь нужно понять, как получить токен. Возможно, retval=1 просто подтверждает успех,
-                        # а токен нужно взять из другого места. Пока вернём None, чтобы вызвать fallback.
-                        # Но может быть, токен есть в заголовках?
-                        token_from_headers = resp.headers.get("X-Token") or resp.headers.get("Token")
-                        if token_from_headers:
-                            return token_from_headers
-                        else:
-                            # Если токена нет, возможно, он уже был в upload_info? Но там его не было.
-                            # Значит, нужно искать другой способ.
-                            # Пока возвращаем фиктивный токен? Нет, это опасно.
-                            # Лучше вернуть None и позволить упасть на fallback.
-                            logger.error("No token found in XML response or headers")
-                            return None
-
-                # Если дошли до сюда, значит, не удалось получить токен
-                logger.error("Could not extract token from response")
-                return None
+                    # Просто логируем и возвращаем None (вызовет fallback)
+                    return None
 
             except RequestException as e:
                 logger.error(f"Upload attempt {attempt+1} failed: {e}")
