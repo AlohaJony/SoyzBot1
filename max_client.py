@@ -49,17 +49,18 @@ class MaxBotClient:
 
     # Загрузка файла
     def upload_file(self, file_path: str, file_type: str) -> Optional[str]:
-        # 1. Получаем URL для загрузки
+        # 1. Получаем URL для загрузки от API MAX
         params = {"type": file_type}
         upload_info = self._request("POST", "/uploads", params=params)
         upload_url = upload_info["url"]
 
-        # 2. Загружаем файл, обязательно с токеном в заголовке
+        # 2. Загружаем файл на полученный URL, обязательно с токеном в заголовке
         with open(file_path, "rb") as f:
             files = {"data": f}
-            headers = {"Authorization": self.token}  # <-- добавили заголовок
+            headers = {"Authorization": self.token}  # <-- ЭТО КЛЮЧЕВОЕ
             resp = requests.post(upload_url, files=files, headers=headers)
-        resp.raise_for_status()
+        resp.raise_for_status()  # если снова 400, здесь упадёт с ошибкой
+        print("Response body:", resp.text)  # или logger.debug
         result = resp.json()
 
         if file_type in ("video", "audio"):
