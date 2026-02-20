@@ -42,23 +42,40 @@ def process_link(chat_id: int, link: str):
             return
 
         for file_type, file_path in files_to_send:
-            try:
-                token = max_bot.upload_file(file_path, file_type)
-                attachment = max_bot.build_attachment(file_type, token)
-                max_bot.send_message(chat_id, "", attachments=[attachment])
-                time.sleep(0.5)
-            except Exception as e:
-                logger.error(f"MAX upload failed: {e}")
-                if yandex:
-                    try:
-                        public_url = yandex.upload_file(file_path)
-                        max_bot.send_message(
-                            chat_id,
-                            f"Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}"
-                        )
-                    except Exception as e2:
-                        logger.error(f"Yandex fallback failed: {e2}")
-                        max_bot.send_message(chat_id, "Ошибка при обработке файла.")
+            max_retries = 3
+            success = False
+            for attempt in range(max_retries):
+                try:
+                    token = max_bot.upload_file(file_path, file_type)
+                    # Небольшая задержка, чтобы файл обработался на сервере MAX
+                    time.sleep(2)
+                    attachment = max_bot.build_attachment(file_type, token)
+                    max_bot.send_message(chat_id, "", attachments=[attachment])
+                    logger.info(f"Файл {file_path} успешно отправлен в MAX")
+                    success = True
+                    break  # выход из цикла попыток
+                except Exception as e:
+                    logger.error(f"Попытка {attempt+1}/{max_retries} для {file_path} не удалась: {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(3)  # ждём перед следующей попыткой
+                    else:
+                        # Последняя попытка провалилась – используем fallback
+                        logger.error(f"Все попытки отправить {file_path} в MAX исчерпаны")
+                        if yandex:
+                            try:
+                                public_url = yandex.upload_file(file_path)
+                                max_bot.send_message(
+                                    chat_id,
+                                    f"Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}"
+                                )
+                            except Exception as e2:
+                                logger.error(f"Yandex fallback failed: {e2}")
+                                max_bot.send_message(chat_id, "Ошибка при обработке файла.")
+                        else:
+                            max_bot.send_message(chat_id, "Не удалось отправить файл.")
+            # Если успешно, можно добавить небольшую паузу перед следующим файлом
+            if success:
+                time.sleep(1)
 
         if description:
             if len(description) > 4000:
