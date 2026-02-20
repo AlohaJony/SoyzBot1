@@ -49,16 +49,19 @@ class MaxBotClient:
 
     # Загрузка файла
     def upload_file(self, file_path: str, file_type: str) -> Optional[str]:
+        # 1. Получаем URL для загрузки
         params = {"type": file_type}
         upload_info = self._request("POST", "/uploads", params=params)
         upload_url = upload_info["url"]
 
+        # 2. Загружаем файл, обязательно с токеном в заголовке
         with open(file_path, "rb") as f:
             files = {"data": f}
-            resp = requests.post(upload_url, files=files)
+            headers = {"Authorization": self.token}  # <-- добавили заголовок
+            resp = requests.post(upload_url, files=files, headers=headers)
         resp.raise_for_status()
         result = resp.json()
-        # Для video/audio возвращается token, для image/file может быть по-другому
+
         if file_type in ("video", "audio"):
             return result.get("token")
         else:

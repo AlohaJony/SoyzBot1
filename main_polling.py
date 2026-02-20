@@ -28,11 +28,7 @@ def process_link(chat_id: int, link: str):
         if info.get("is_live") is False and info.get("duration"):
             video_file, _ = downloader.download_best_video(link)
             files_to_send.append(("video", video_file))
-
-        thumb_file = downloader.download_thumbnail(link, info)
-        if thumb_file:
-            files_to_send.append(("image", thumb_file))
-
+            
         images = downloader.download_all_images(link)
         for img in images:
             files_to_send.append(("image", img))
