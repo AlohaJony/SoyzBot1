@@ -59,8 +59,10 @@ class MaxBotClient:
             files = {"data": f}
             headers = {"Authorization": self.token}  # <-- ЭТО КЛЮЧЕВОЕ
             resp = requests.post(upload_url, files=files, headers=headers)
+            logger.error(f"Upload response status: {resp.status_code}, body: {resp.text}")
+        print("Upload response status:", resp.status_code, "Body:", resp.text)
         resp.raise_for_status()  # если снова 400, здесь упадёт с ошибкой
-        print("Response body:", resp.text)  # или logger.debug
+        
         result = resp.json()
 
         if file_type in ("video", "audio"):
