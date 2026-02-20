@@ -1,7 +1,10 @@
 import requests
 import time
+import logging
 from typing import Optional, Dict, Any, List
 from config import MAX_BOT_TOKEN, MAX_API_BASE
+
+logger = logging.getLogger(__name__)
 
 
 class MaxBotClient:
@@ -59,7 +62,7 @@ class MaxBotClient:
             files = {"data": f}
             headers = {"Authorization": self.token}  # <-- ЭТО КЛЮЧЕВОЕ
             resp = requests.post(upload_url, files=files, headers=headers)
-            logger.error(f"Upload response status: {resp.status_code}, body: {resp.text}")
+        logger.error(f"Upload response status: {resp.status_code}, body: {resp.text}")
         print("Upload response status:", resp.status_code, "Body:", resp.text)
         resp.raise_for_status()  # если снова 400, здесь упадёт с ошибкой
         
