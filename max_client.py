@@ -56,90 +56,46 @@ class MaxBotClient:
     # Загрузка файла
     def upload_file(self, file_path: str, file_type: str) -> Optional[str]:
         import os
-        import shutil
         import time
         from requests.exceptions import RequestException
 
-        # Логируем размер файла
         file_size = os.path.getsize(file_path)
-        logger.error(f"Начинаем загрузку файла: {file_path}, размер: {file_size} байт, тип: {file_type}")
+        logger.error(f"Uploading file: {os.path.basename(file_path)}, size: {file_size} bytes, type: {file_type}")
 
-        # 1. Получаем URL для загрузки от API MAX
+        # 1. Получаем upload_url от API MAX
         params = {"type": file_type}
         upload_info = self._request("POST", "/uploads", params=params)
         upload_url = upload_info["url"]
-        logger.error(f"Получен upload_url: {upload_url}")
+        logger.error(f"Upload URL: {upload_url}")
 
-        # 2. Переименовываем файл в простое имя, чтобы избежать проблем со спецсимволами
-        safe_filename = "video.mp4"  # для видео; для других типов можно сделать универсально
-        if file_type != "video":
-            # Для изображений, файлов и т.д. можно использовать оригинальное расширение
-            ext = os.path.splitext(file_path)[1]
-            safe_filename = f"file{ext}"
-        safe_path = os.path.join(os.path.dirname(file_path), safe_filename)
-        shutil.copy2(file_path, safe_path)
-        logger.error(f"Создана копия с безопасным именем: {safe_path}")
-
-        # 3. Загружаем файл на CDN с повторными попытками
-        max_upload_retries = 3
-        for attempt in range(max_upload_retries):
+        # 2. Загружаем файл на CDN, максимально приближаясь к curl-примеру
+        max_retries = 3
+        for attempt in range(max_retries):
             try:
-                with open(safe_path, "rb") as f:
-                    files = {"data": f}
-                    # Важно: НЕ передаём заголовок Authorization, только Content-Type (опционально)
-                    headers = {"Content-Type": "multipart/form-data"}  # можно добавить, но не обязательно
-                    resp = requests.post(upload_url, files=files, headers=headers, timeout=60)
+                with open(file_path, "rb") as f:
+                    # Создаём файловый объект так, как это делает curl с -F "data=@file"
+                    files = {"data": (os.path.basename(file_path), f, "application/octet-stream")}
+                    # Важно: НЕ передаём никаких заголовков, кроме тех, что requests ставит сам
+                    resp = requests.post(upload_url, files=files, timeout=60)
 
-                logger.error(f"Попытка {attempt+1}/{max_upload_retries}: статус {resp.status_code}")
-                logger.error(f"Тело ответа: {resp.text}")
+                logger.error(f"Attempt {attempt+1}: status {resp.status_code}")
+                logger.error(f"Response body: {resp.text[:200]}")  # первые 200 символов
 
                 resp.raise_for_status()
                 result = resp.json()
-                logger.error(f"Загрузка успешна, получен результат: {result}")
+                logger.error(f"Upload successful, result: {result}")
 
-                # 4. Удаляем временную копию
-                os.remove(safe_path)
-                break  # выход из цикла попыток
+                # 3. Возвращаем токен
+                if file_type in ("video", "audio"):
+                    return result.get("token")
+                else:
+                    return result.get("token") or result.get("photo_id")
 
             except RequestException as e:
-                logger.error(f"Ошибка при загрузке (попытка {attempt+1}): {e}")
-                if attempt == max_upload_retries - 1:
-                    # Последняя попытка не удалась – пробуем оригинальный файл (на всякий случай) или падаем
-                    logger.error("Все попытки загрузки на CDN исчерпаны")
-                    # Можно попробовать загрузить оригинальный файл как fallback
-                    try:
-                        with open(file_path, "rb") as f:
-                            files = {"data": f}
-                            resp = requests.post(upload_url, files=files, timeout=60)
-                        resp.raise_for_status()
-                        result = resp.json()
-                        logger.error("Загрузка оригинального файла неожиданно удалась")
-                        os.remove(safe_path)  # всё равно удалим временный
-                        break
-                    except Exception as e2:
-                        logger.error(f"Fallback тоже не удался: {e2}")
-                        os.remove(safe_path)
-                        raise  # пробрасываем исключение дальше
-                else:
-                    # Ждём перед следующей попыткой (экспоненциальная задержка)
-                    wait_time = 2 ** attempt  # 1, 2, 4 секунды
-                    logger.error(f"Повторная попытка через {wait_time} секунд")
-                    time.sleep(wait_time)
-            except Exception as e:
-                # Другие ошибки (например, проблемы с файлом)
-                logger.error(f"Неожиданная ошибка: {e}")
-                os.remove(safe_path)
-                raise
-        else:
-            # Если цикл завершился без break (все попытки провалились)
-            os.remove(safe_path)
-            raise Exception("Не удалось загрузить файл на CDN после нескольких попыток")
-
-        # 5. Возвращаем токен в зависимости от типа файла
-        if file_type in ("video", "audio"):
-            return result.get("token")
-        else:
-            return result.get("token") or result.get("photo_id")
+                logger.error(f"Upload attempt {attempt+1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise
+                time.sleep(2 ** attempt)  # 1, 2, 4 seconds
 
     def build_attachment(self, file_type: str, token: str) -> Dict:
         return {"type": file_type, "payload": {"token": token}}
