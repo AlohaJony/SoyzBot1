@@ -3,6 +3,7 @@ import time
 import logging
 import os
 import shutil
+import xml.etree.ElementTree as ET
 from typing import Optional, Dict, Any, List
 from config import MAX_BOT_TOKEN, MAX_API_BASE
 from requests.exceptions import RequestException
@@ -57,6 +58,7 @@ class MaxBotClient:
     def upload_file(self, file_path: str, file_type: str) -> Optional[str]:
         import os
         import time
+        import xml.etree.ElementTree as ET
         from requests.exceptions import RequestException
 
         file_size = os.path.getsize(file_path)
@@ -68,34 +70,59 @@ class MaxBotClient:
         upload_url = upload_info["url"]
         logger.error(f"Upload URL: {upload_url}")
 
-        # 2. Загружаем файл на CDN, максимально приближаясь к curl-примеру
-        max_retries = 3
+        # 2. Загружаем файл на CDN
+        max_retries = 2  # Уменьшим до 2, так как первая попытка уже успешна
         for attempt in range(max_retries):
             try:
                 with open(file_path, "rb") as f:
-                    # Создаём файловый объект так, как это делает curl с -F "data=@file"
                     files = {"data": (os.path.basename(file_path), f, "application/octet-stream")}
-                    # Важно: НЕ передаём никаких заголовков, кроме тех, что requests ставит сам
                     resp = requests.post(upload_url, files=files, timeout=60)
 
                 logger.error(f"Attempt {attempt+1}: status {resp.status_code}")
-                logger.error(f"Response body: {resp.text[:200]}")  # первые 200 символов
+                logger.error(f"Response headers: {dict(resp.headers)}")  # Логируем заголовки
+                logger.error(f"Response body: {resp.text}")
 
                 resp.raise_for_status()
-                result = resp.json()
-                logger.error(f"Upload successful, result: {result}")
 
-                # 3. Возвращаем токен
-                if file_type in ("video", "audio"):
-                    return result.get("token")
-                else:
-                    return result.get("token") or result.get("photo_id")
+                # Пытаемся распарсить JSON
+                try:
+                    result = resp.json()
+                    logger.error(f"JSON response: {result}")
+                    token = result.get("token")
+                    if token:
+                        return token
+                except ValueError:
+                    # Если не JSON, возможно, это XML
+                    logger.error("Response is not JSON, trying XML")
+                    # Парсим XML
+                    root = ET.fromstring(resp.text)
+                    # Ищем retval или любой другой значимый элемент
+                    retval = root.text if root.tag == 'retval' else None
+                    if retval is not None:
+                        logger.error(f"retval = {retval}")
+                        # Здесь нужно понять, как получить токен. Возможно, retval=1 просто подтверждает успех,
+                        # а токен нужно взять из другого места. Пока вернём None, чтобы вызвать fallback.
+                        # Но может быть, токен есть в заголовках?
+                        token_from_headers = resp.headers.get("X-Token") or resp.headers.get("Token")
+                        if token_from_headers:
+                            return token_from_headers
+                        else:
+                            # Если токена нет, возможно, он уже был в upload_info? Но там его не было.
+                            # Значит, нужно искать другой способ.
+                            # Пока возвращаем фиктивный токен? Нет, это опасно.
+                            # Лучше вернуть None и позволить упасть на fallback.
+                            logger.error("No token found in XML response or headers")
+                            return None
+
+                # Если дошли до сюда, значит, не удалось получить токен
+                logger.error("Could not extract token from response")
+                return None
 
             except RequestException as e:
                 logger.error(f"Upload attempt {attempt+1} failed: {e}")
                 if attempt == max_retries - 1:
                     raise
-                time.sleep(2 ** attempt)  # 1, 2, 4 seconds
+                time.sleep(2 ** attempt)
 
     def build_attachment(self, file_type: str, token: str) -> Dict:
         return {"type": file_type, "payload": {"token": token}}
