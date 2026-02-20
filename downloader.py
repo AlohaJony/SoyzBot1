@@ -15,16 +15,29 @@ class MediaDownloader:
             return ydl.extract_info(url, download=False)
 
     def download_best_video(self, url: str) -> Tuple[str, Dict]:
-        ydl_opts = {
-            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "outtmpl": os.path.join(self.temp_dir, "%(title)s.%(ext)s"),
-            "quiet": True,
-            "no_warnings": True,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-            return filename, info
+        # Сначала пробуем формат, требующий ffmpeg
+        formats_to_try = [
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "best[ext=mp4]/best",  # fallback на готовый mp4
+            "best"                  # последний шанс
+        ]
+        last_error = None
+        for fmt in formats_to_try:
+            try:
+                ydl_opts = {
+                    "format": fmt,
+                    "outtmpl": os.path.join(self.temp_dir, "%(title)s.%(ext)s"),
+                    "quiet": True,
+                    "no_warnings": True,
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    filename = ydl.prepare_filename(info)
+                    return filename, info
+            except Exception as e:
+                last_error = e
+                continue
+        raise last_error or Exception("Failed to download video with any format")
 
     def download_thumbnail(self, url: str, info: Dict) -> Optional[str]:
         thumbnails = info.get("thumbnails", [])
