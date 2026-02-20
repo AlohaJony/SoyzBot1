@@ -67,7 +67,8 @@ class MaxBotClient:
         # 1. Получаем upload_url от API MAX
         params = {"type": file_type}
         upload_info = self._request("POST", "/uploads", params=params)
-        upload_url = upload_info["url"]
+        upload_info = self._request("POST", "/uploads", params=params)
+        logger.error(f"Full upload_info: {upload_info}")  # посмотрим, есть ли там token
         logger.error(f"Upload URL: {upload_url}")
 
         # 2. Загружаем файл на CDN
