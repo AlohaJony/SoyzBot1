@@ -64,6 +64,7 @@ class MaxBotClient:
         import os
         import time
         from requests.exceptions import RequestException
+        import xml.etree.ElementTree as ET
 
         file_size = os.path.getsize(file_path)
         logger.error(f"Uploading file: {os.path.basename(file_path)}, size: {file_size} bytes, type: {file_type}")
@@ -73,16 +74,11 @@ class MaxBotClient:
         upload_info = self._request("POST", "/uploads", params=params)
         logger.error(f"Full upload_info: {upload_info}")
 
-        # 2. Для video и audio токен может прийти сразу
-        if file_type in ("video", "audio") and "token" in upload_info:
-            token = upload_info["token"]
-            logger.error(f"Token received directly from upload_info: {token}")
-            return token
-
-        # 3. Если токена нет (например, для image или file), загружаем файл на CDN
         upload_url = upload_info["url"]
-        logger.error(f"Upload URL: {upload_url}")
+        # Для video/audio токен может быть уже здесь, сохраним его
+        token_from_api = upload_info.get("token")
 
+        # 2. Загружаем файл на CDN (обязательно для всех типов)
         max_retries = 2
         for attempt in range(max_retries):
             try:
@@ -90,32 +86,39 @@ class MaxBotClient:
                     files = {"data": (os.path.basename(file_path), f, "application/octet-stream")}
                     resp = requests.post(upload_url, files=files, timeout=60)
 
-                logger.error(f"Attempt {attempt+1}: status {resp.status_code}")
+                logger.error(f"CDN upload attempt {attempt+1}: status {resp.status_code}")
                 logger.error(f"Response headers: {dict(resp.headers)}")
                 logger.error(f"Response body: {resp.text}")
 
                 resp.raise_for_status()
-
-                # Пытаемся распарсить JSON
-                try:
-                    result = resp.json()
-                    logger.error(f"JSON response: {result}")
-                    # Возвращаем токен (для video/audio он должен быть в result)
-                    if file_type in ("video", "audio"):
-                        return result.get("token")
-                    else:
-                        return result.get("token") or result.get("photo_id")
-                except ValueError:
-                    # Если не JSON, возможно, это XML (для некоторых CDN)
-                    logger.error("Response is not JSON, trying XML")
-                    # Просто логируем и возвращаем None (вызовет fallback)
-                    return None
-
+                break  # успешно
             except RequestException as e:
-                logger.error(f"Upload attempt {attempt+1} failed: {e}")
+                logger.error(f"CDN upload attempt {attempt+1} failed: {e}")
                 if attempt == max_retries - 1:
                     raise
                 time.sleep(2 ** attempt)
+
+        # 3. Теперь, когда файл загружен, возвращаем токен
+        if file_type in ("video", "audio"):
+            # Для видео/аудио используем токен, полученный от API
+            if token_from_api:
+                return token_from_api
+            else:
+                # Если токена почему-то нет, пробуем извлечь из ответа (маловероятно)
+                try:
+                    result = resp.json()
+                    return result.get("token")
+                except:
+                    return None
+        else:
+            # Для image/file токен должен быть в ответе CDN (JSON)
+            try:
+                result = resp.json()
+                return result.get("token") or result.get("photo_id")
+            except ValueError:
+                # Если ответ не JSON (например, XML), логируем и возвращаем None
+                logger.error("CDN response is not JSON, cannot extract token")
+                return None
 
     def build_attachment(self, file_type: str, token: str) -> Dict:
         return {"type": file_type, "payload": {"token": token}}
