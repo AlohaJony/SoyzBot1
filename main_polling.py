@@ -75,7 +75,7 @@ def process_link(chat_id: int, link: str):
             max_bot.send_message(chat_id, "Не удалось найти медиа по вашей ссылке.")
             return
             
-        # images = downloader.download_all_images(link)
+        images = downloader.download_all_images(link)
         for img in images:
             files_to_send.append(("image", img))
 
