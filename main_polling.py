@@ -25,9 +25,38 @@ def process_link(chat_id: int, link: str):
         files_to_send = []
         description = downloader.get_description(info)
 
-        if info.get("is_live") is False and info.get("duration"):
-            video_file, _ = downloader.download_best_video(link)
-            files_to_send.append(("video", video_file))
+        # Пытаемся скачать видео, если это одиночное видео
+        if info.get('_type') != 'playlist' and info.get('duration'):
+            try:
+                video_file, _ = downloader.download_best_video(link)
+                files_to_send.append(("video", video_file))
+            except Exception as e:
+                logger.error(f"Failed to download video: {e}")
+        else:
+            # Если это плейлист/карусель (например, пост с несколькими фото/видео)
+            if 'entries' in info:
+                for entry in info['entries']:
+                    # Для каждого элемента пытаемся скачать видео или изображение
+                    if entry.get('duration'):  # видео
+                        try:
+                            # Скачиваем каждое видео отдельно (может быть долго)
+                            video_file, _ = downloader.download_best_video(entry['webpage_url'])
+                            files_to_send.append(("video", video_file))
+                        except:
+                            pass
+                    else:  # возможно, изображение
+                        # Пробуем скачать thumbnail как изображение
+                        if entry.get('thumbnails'):
+                            thumb_url = entry['thumbnails'][-1]['url']
+                            img_path = downloader._download_image(thumb_url, f"image_{entry.get('id', 'unknown')}.jpg")
+                            if img_path:
+                                files_to_send.append(("image", img_path))
+            else:
+                # Если это не плейлист и нет duration, возможно, это одиночное изображение
+                if info.get('url') and info.get('ext') in ('jpg', 'png', 'jpeg'):
+                    img_path = downloader._download_image(info['url'], f"image.{info['ext']}")
+                    if img_path:
+                        files_to_send.append(("image", img_path))
             
         images = downloader.download_all_images(link)
         for img in images:

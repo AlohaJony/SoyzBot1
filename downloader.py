@@ -2,6 +2,7 @@ import yt_dlp
 import os
 import tempfile
 import requests
+import json
 from typing import List, Dict, Optional, Tuple
 
 
@@ -12,32 +13,44 @@ class MediaDownloader:
     def extract_info(self, url: str) -> Dict:
         ydl_opts = {"quiet": True, "no_warnings": True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(url, download=False)
+            info = ydl.extract_info(url, download=False)
+            # Логируем структуру (только ключи, чтобы не засорять)
+            logger.error(f"Extracted info keys for {url}: {list(info.keys())}")
+            # Если есть 'entries' (плейлист/карусель), логируем количество
+            if 'entries' in info:
+                logger.error(f"Number of entries: {len(info['entries'])}")
+            return info
 
     def download_best_video(self, url: str) -> Tuple[str, Dict]:
-        # Пробуем форматы, которые не требуют ffmpeg
-        # Сначала ищем готовый mp4
-        # Затем любой другой готовый формат (кроме требующих слияния)
-        # В крайнем случае используем лучший формат, но предупреждаем
-        for fmt in ["best[ext=mp4]/best", "best"]:
+        # Попробуем несколько стратегий
+        strategies = [
+            {"format": "best[ext=mp4]/best", "merge": False},  # готовый mp4
+            {"format": "best", "merge": False},                # лучший без слияния
+            {"format": "bestvideo+bestaudio", "merge": True},  # требует ffmpeg
+        ]
+    
+        last_error = None
+        for strat in strategies:
             try:
                 ydl_opts = {
-                    "format": fmt,
+                    "format": strat["format"],
                     "outtmpl": os.path.join(self.temp_dir, "%(title)s.%(ext)s"),
                     "quiet": True,
                     "no_warnings": True,
                 }
+                # Если требуется слияние, но ffmpeg отсутствует, можно пропустить
+                if strat["merge"]:
+                    # Проверим наличие ffmpeg (опционально)
+                    pass  # пока просто пробуем
+            
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
                     filename = ydl.prepare_filename(info)
-                    # Проверяем, что файл существует и не нулевой
-                    if os.path.getsize(filename) > 0:
-                        return filename, info
-                    else:
-                        raise Exception("Empty file")
+                    return filename, info
             except Exception as e:
-                continue  # пробуем следующий формат
-        raise Exception("Не удалось скачать видео ни в одном формате")
+                last_error = e
+                continue
+        raise last_error or Exception("Не удалось скачать видео ни одним способом")
 
     def download_thumbnail(self, url: str, info: Dict) -> Optional[str]:
         thumbnails = info.get("thumbnails", [])
