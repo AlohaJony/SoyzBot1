@@ -21,7 +21,12 @@ class MaxBotClient:
     def _request(self, method: str, path: str, **kwargs) -> Dict[str, Any]:
         url = f"{self.base_url}{path}"
         resp = self.session.request(method, url, **kwargs)
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as e:
+            # Здесь мы увидим, что именно возвращает MAX при 400
+            logger.error(f"HTTP error {resp.status_code} for {method} {path}: {resp.text}")
+            raise
         return resp.json()
 
     def get_me(self) -> Dict[str, Any]:
@@ -127,4 +132,13 @@ class MaxBotClient:
         if format:
             payload["format"] = format
         params = {"chat_id": chat_id, "disable_link_preview": str(disable_link_preview).lower()}
-        return self._request("POST", "/messages", params=params, json=payload)
+    
+        # Логируем, что отправляем
+        logger.error(f"Sending message to chat {chat_id} with payload: {payload}")
+    
+        # Выполняем запрос
+        result = self._request("POST", "/messages", params=params, json=payload)
+    
+        # Логируем результат
+        logger.error(f"Send message result: {result}")
+        return result

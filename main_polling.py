@@ -43,9 +43,9 @@ def process_link(chat_id: int, link: str):
             for attempt in range(max_retries):
                 try:
                     token = max_bot.upload_file(file_path, file_type)
-                    # Небольшая задержка, чтобы файл обработался на сервере MAX
-                    time.sleep(2)
                     attachment = max_bot.build_attachment(file_type, token)
+                    # Небольшая задержка, чтобы файл обработался на сервере MAX
+                    time.sleep(5)
                     max_bot.send_message(chat_id, "", attachments=[attachment])
                     logger.info(f"Файл {file_path} успешно отправлен в MAX")
                     success = True
