@@ -25,40 +25,57 @@ def process_link(chat_id: int, link: str):
         files_to_send = []
         description = downloader.get_description(info)
 
-        # Пытаемся скачать видео, если это одиночное видео
-        if info.get('_type') != 'playlist' and info.get('duration'):
-            try:
-                video_file, _ = downloader.download_best_video(link)
-                files_to_send.append(("video", video_file))
-            except Exception as e:
-                logger.error(f"Failed to download video: {e}")
+        # Логируем структуру для отладки (ключи и наличие entries)
+        logger.error(f"Structure: _type={info.get('_type')}, keys={list(info.keys())}")
+        if 'entries' in info:
+            logger.error(f"Number of entries: {len(info['entries'])}")
+
+        # Обработка в зависимости от типа контента
+        if info.get('_type') == 'playlist' or 'entries' in info:
+            # Это плейлист/карусель (Instagram пост с несколькими элементами)
+            for entry in info['entries']:
+                if not entry:
+                    continue
+                # Проверяем, есть ли у entry длительность (видео)
+                if entry.get('duration'):
+                    try:
+                        video_file, _ = downloader.download_best_video(entry['webpage_url'])
+                        files_to_send.append(("video", video_file))
+                    except Exception as e:
+                        logger.error(f"Failed to download video from entry: {e}")
+                else:
+                    # Возможно, изображение: пробуем скачать превью
+                    if entry.get('thumbnails'):
+                        thumb_url = entry['thumbnails'][-1]['url']
+                        img_path = downloader._download_image(thumb_url, f"image_{entry.get('id', 'unknown')}.jpg")
+                        if img_path:
+                            files_to_send.append(("image", img_path))
         else:
-            # Если это плейлист/карусель (например, пост с несколькими фото/видео)
-            if 'entries' in info:
-                for entry in info['entries']:
-                    # Для каждого элемента пытаемся скачать видео или изображение
-                    if entry.get('duration'):  # видео
-                        try:
-                            # Скачиваем каждое видео отдельно (может быть долго)
-                            video_file, _ = downloader.download_best_video(entry['webpage_url'])
-                            files_to_send.append(("video", video_file))
-                        except:
-                            pass
-                    else:  # возможно, изображение
-                        # Пробуем скачать thumbnail как изображение
-                        if entry.get('thumbnails'):
-                            thumb_url = entry['thumbnails'][-1]['url']
-                            img_path = downloader._download_image(thumb_url, f"image_{entry.get('id', 'unknown')}.jpg")
-                            if img_path:
-                                files_to_send.append(("image", img_path))
-            else:
-                # Если это не плейлист и нет duration, возможно, это одиночное изображение
-                if info.get('url') and info.get('ext') in ('jpg', 'png', 'jpeg'):
-                    img_path = downloader._download_image(info['url'], f"image.{info['ext']}")
-                    if img_path:
-                        files_to_send.append(("image", img_path))
+            # Одиночный пост
+            if info.get('duration'):  # видео
+                try:
+                    video_file, _ = downloader.download_best_video(link)
+                    files_to_send.append(("video", video_file))
+                except Exception as e:
+                    logger.error(f"Failed to download video: {e}")
+            elif info.get('url') and info.get('ext') in ('jpg', 'png', 'jpeg'):
+                # Прямая ссылка на изображение
+                img_path = downloader._download_image(info['url'], f"image.{info['ext']}")
+                if img_path:
+                    files_to_send.append(("image", img_path))
+            # Дополнительно: если есть thumbnails и нет видео, скачиваем как изображение
+            elif info.get('thumbnails') and not files_to_send:
+                thumb_url = info['thumbnails'][-1]['url']
+                img_path = downloader._download_image(thumb_url, "thumbnail.jpg")
+                if img_path:
+                    files_to_send.append(("image", img_path))
+
+        # Если ничего не найдено, но есть описание – отправляем только текст
+        if not files_to_send and not description:
+            max_bot.send_message(chat_id, "Не удалось найти медиа по вашей ссылке.")
+            return
             
-        images = downloader.download_all_images(link)
+        # images = downloader.download_all_images(link)
         for img in images:
             files_to_send.append(("image", img))
 

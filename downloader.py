@@ -3,8 +3,10 @@ import os
 import tempfile
 import requests
 import json
+import logging
 from typing import List, Dict, Optional, Tuple
 
+logger = logging.getLogger(__name__)
 
 class MediaDownloader:
     def __init__(self, temp_dir: Optional[str] = None):
@@ -95,7 +97,8 @@ class MediaDownloader:
                 for chunk in r.iter_content(8192):
                     f.write(chunk)
             return path
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to download image {url}: {e}")
             return None
 
     def get_description(self, info: Dict) -> Optional[str]:
