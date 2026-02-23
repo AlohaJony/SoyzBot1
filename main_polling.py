@@ -23,23 +23,6 @@ except Exception as e:
 yandex = YandexDiskUploader(YANDEX_DISK_TOKEN) if YANDEX_DISK_TOKEN else None
 
 user_state = {}  # chat_id -> state
-def main():
-    logger.info("Starting MAX bot (polling mode)...")
-    # Проверяем, что BOT_ID получен
-    if BOT_ID is None:
-        logger.error("FATAL: Could not get bot ID. Exiting.")
-        return  # Это внутри функции, всё правильно
-
-    marker = None
-    while True:def main():
-    logger.info("Starting MAX bot (polling mode)...")
-    # Проверяем, что BOT_ID получен
-    if BOT_ID is None:
-        logger.error("FATAL: Could not get bot ID. Exiting.")
-        return  # Это внутри функции, всё правильно
-
-    marker = None
-    while True:
 
 def process_link(chat_id: int, link: str):
     max_bot.send_action(chat_id, "typing_on")
