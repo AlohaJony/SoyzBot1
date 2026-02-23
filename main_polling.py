@@ -1,4 +1,4 @@
-
+import os
 import time
 import logging
 from config import MAX_BOT_TOKEN, YANDEX_DISK_TOKEN, DONATE_URL
@@ -8,9 +8,24 @@ from yandex_disk import YandexDiskUploader
 from utils import TempDir
 import traceback
 
+MARKER_FILE = "marker.txt"
+
+def load_marker():
+    if os.path.exists(MARKER_FILE):
+        with open(MARKER_FILE, "r") as f:
+            try:
+                return int(f.read().strip())
+            except:
+                return None
+    return None
+
+def save_marker(marker):
+    with open(MARKER_FILE, "w") as f:
+        f.write(str(marker))
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+processed_mids = set()
 max_bot = MaxBotClient(MAX_BOT_TOKEN)
 try:
     bot_info = max_bot.get_me()
@@ -182,6 +197,13 @@ def handle_update(update):
     update_type = update.get("update_type")
     if update_type == "message_created":
         msg = update.get("message", {})
+        mid = msg.get("body", {}).get("mid")
+        msg = update.get("message", {})
+        if mid and mid in processed_mids:
+            logger.info(f"Message {mid} already processed, skipping")
+            return
+            # после успешной обработки добавьте в множество
+        processed_mids.add(mid)
         chat_id = msg.get("recipient", {}).get("chat_id") or msg.get("recipient", {}).get("user_id")
         if not chat_id:
             logger.error("No chat_id in message")
@@ -231,12 +253,15 @@ def handle_update(update):
 
 def main():
     logger.info("Starting MAX bot (polling mode)...")
-    marker = None
+    marker = load_marker()
     while True:
         try:
             updates_data = max_bot.get_updates(marker=marker, timeout=30)
             updates = updates_data.get("updates", [])
-            marker = updates_data.get("marker")
+            new_marker = updates_data.get("marker")
+            if new_marker is not None:
+                marker = new_marker
+                save_marker(marker)
             for upd in updates:
                 handle_update(upd)
         except Exception as e:
