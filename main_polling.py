@@ -12,6 +12,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 max_bot = MaxBotClient(MAX_BOT_TOKEN)
+if BOT_ID is None:
+    logger.error("FATAL: Could not get bot ID. Exiting.")
+    return
 try:
     bot_info = max_bot.get_me()
     BOT_ID = bot_info['user_id']
@@ -19,6 +22,7 @@ try:
 except Exception as e:
     logger.error(f"Failed to get bot info: {e}")
     BOT_ID = None
+
 yandex = YandexDiskUploader(YANDEX_DISK_TOKEN) if YANDEX_DISK_TOKEN else None
 
 user_state = {}  # chat_id -> state
@@ -32,7 +36,7 @@ def process_link(chat_id: int, link: str):
         info = downloader.extract_info(link)
         files_to_send = []
         description = downloader.get_description(info)
-
+        logger.error("Starting loop over entries")
         # Логируем структуру для отладки (ключи и наличие entries)
         logger.error(f"Structure: _type={info.get('_type')}, keys={list(info.keys())}")
         if 'entries' in info:
@@ -176,6 +180,7 @@ def process_link(chat_id: int, link: str):
         downloader.cleanup()
 
 def handle_update(update):
+    logger.error(f"UPDATE RECEIVED: {update}")
     update_type = update.get("update_type")
     if update_type == "message_created":
         msg = update.get("message", {})
@@ -186,11 +191,12 @@ def handle_update(update):
         sender = msg.get("sender", {})
         sender_id = sender.get("user_id")
         # Игнорируем сообщения от самого бота
-        if sender_id == BOT_ID:
-            logger.info("Ignoring message from self")
+        if sender_id is not None and sender_id == BOT_ID:
+            logger.info(f"Ignoring message from self (sender_id={sender_id})")
             return
-        # Также можно оставить проверку is_bot для надёжности
+        # Также игнорируем любые сообщения от ботов (на всякий случай)
         if sender.get("is_bot"):
+            logger.info("Ignoring message from another bot")
             return
 
         if text == "/start":
