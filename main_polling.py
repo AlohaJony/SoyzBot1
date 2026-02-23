@@ -87,6 +87,14 @@ def process_link(chat_id: int, link: str):
             # Получаем токен (с загрузкой на CDN внутри)
             try:
                 token = max_bot.upload_file(file_path, file_type)
+                if token is None:
+                    logger.error("No token received, using fallback")
+                    if yandex:
+                        public_url = yandex.upload_file(file_path)
+                        max_bot.send_message(chat_id, f"Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}")
+                    else:
+                        max_bot.send_message(chat_id, "Не удалось отправить файл.")
+                    continue  # переходим к следующему файлу, если они есть
             except Exception as e:
                 logger.error(f"Failed to upload {file_path} to MAX: {e}")
                 if yandex:
