@@ -107,7 +107,7 @@ class MaxBotClient:
                 # Если токена почему-то нет, пробуем извлечь из ответа (маловероятно)
                 try:
                     result = resp.json()
-                    return result.get("token")
+                    #return result.get("token")
                 except:
                     return None
         else:

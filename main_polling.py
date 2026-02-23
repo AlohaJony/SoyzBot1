@@ -179,6 +179,7 @@ def process_link(chat_id: int, link: str):
 
 def handle_update(update):
     logger.error(f"UPDATE RECEIVED: {update}")
+    logger.error(f"BOT_ID={BOT_ID}, sender_id={sender_id}, type(BOT_ID)={type(BOT_ID)}, type(sender_id)={type(sender_id)}")
     update_type = update.get("update_type")
     if update_type == "message_created":
         msg = update.get("message", {})
