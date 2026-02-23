@@ -8,7 +8,8 @@ from yandex_disk import YandexDiskUploader
 from utils import TempDir
 import traceback
 
-MARKER_FILE = "marker.txt"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MARKER_FILE = os.path.join(BASE_DIR, "marker.txt")
 
 def load_marker():
     if os.path.exists(MARKER_FILE):
@@ -193,17 +194,16 @@ def process_link(chat_id: int, link: str):
         downloader.cleanup()
 
 def handle_update(update):
+    logger.error(f"BOT_ID={BOT_ID}, sender_id={sender_id if 'sender' in locals() else 'undefined'}")
     logger.error(f"UPDATE RECEIVED: {update}")
     update_type = update.get("update_type")
     if update_type == "message_created":
         msg = update.get("message", {})
         mid = msg.get("body", {}).get("mid")
-        msg = update.get("message", {})
         if mid and mid in processed_mids:
             logger.info(f"Message {mid} already processed, skipping")
             return
             # после успешной обработки добавьте в множество
-        processed_mids.add(mid)
         chat_id = msg.get("recipient", {}).get("chat_id") or msg.get("recipient", {}).get("user_id")
         if not chat_id:
             logger.error("No chat_id in message")
@@ -220,7 +220,7 @@ def handle_update(update):
             return
 
         # Игнорируем сообщения от самого бота
-        if sender_id == BOT_ID:
+        if sender_id    q1§:
             logger.info(f"Ignoring message from self (sender_id={sender_id})")
             return
         # Также игнорируем любые сообщения от других ботов
@@ -240,7 +240,10 @@ def handle_update(update):
             user_state[chat_id] = None
         else:
             max_bot.send_message(chat_id, "Отправьте ссылку для обработки или /start для начала.")
-
+        # после успешной обработки добавляем mid в множество
+        if mid:
+            processed_mids.add(mid)
+            
     elif update_type == "bot_started":
         chat_id = update.get("chat_id")
         if chat_id:
