@@ -179,21 +179,29 @@ def process_link(chat_id: int, link: str):
 
 def handle_update(update):
     logger.error(f"UPDATE RECEIVED: {update}")
-    logger.error(f"BOT_ID={BOT_ID}, sender_id={sender_id}, type(BOT_ID)={type(BOT_ID)}, type(sender_id)={type(sender_id)}")
     update_type = update.get("update_type")
     if update_type == "message_created":
         msg = update.get("message", {})
         chat_id = msg.get("recipient", {}).get("chat_id") or msg.get("recipient", {}).get("user_id")
         if not chat_id:
+            logger.error("No chat_id in message")
             return
         text = msg.get("body", {}).get("text", "").strip()
         sender = msg.get("sender", {})
+        # Проверяем наличие sender
+        if not sender:
+            logger.error("No sender in message")
+            return
         sender_id = sender.get("user_id")
+        if sender_id is None:
+            logger.error("sender_id is None")
+            return
+
         # Игнорируем сообщения от самого бота
-        if sender_id is not None and sender_id == BOT_ID:
+        if sender_id == BOT_ID:
             logger.info(f"Ignoring message from self (sender_id={sender_id})")
             return
-        # Также игнорируем любые сообщения от ботов (на всякий случай)
+        # Также игнорируем любые сообщения от других ботов
         if sender.get("is_bot"):
             logger.info("Ignoring message from another bot")
             return
