@@ -58,57 +58,50 @@ def process_link(chat_id: int, link: str):
         logger.error(f"Duration from info: {info.get('duration')}")
         files_to_send = []
         description = downloader.get_description(info)
-        logger.error("Starting loop over entries")
-        # Логируем структуру для отладки (ключи и наличие entries)
-        logger.error(f"Structure: _type={info.get('_type')}, keys={list(info.keys())}")
-        if 'entries' in info:
-            logger.error(f"Number of entries: {len(info['entries'])}")
 
-        # Обработка в зависимости от типа контента
-        if info.get('_type') == 'playlist' or 'entries' in info:
-            entries = info.get('entries', [])
+        entries = info.get('entries')
+        if entries and isinstance(entries, list) and len(entries) > 0:
+            # Плейлист/карусель
             logger.info(f"Processing playlist with {len(entries)} entries")
-            # Это плейлист/карусель (Instagram пост с несколькими элементами)
-            for entry in info['entries']:
+            for entry in entries:
                 logger.error(f"Entry keys: {list(entry.keys())}")
                 if not entry:
                     continue
 
-                # Пытаемся скачать видео (если есть длительность или это видео)
+                # Пытаемся скачать видео
                 video_success = False
-                if entry.get('duration') or entry.get('ext') in ('mp4', 'mov'):  # предположим, что видео
+                if entry.get('duration') or (entry.get('ext') in ('mp4', 'mov', 'm4a')):
                     try:
                         video_file, _ = downloader.download_best_video(entry['webpage_url'])
-                        files_to_send.append(("video", video_file))
-                        video_success = True
+                        if video_file and os.path.exists(video_file):
+                            files_to_send.append(("video", video_file))
+                            video_success = True
+                        else:
+                            logger.error(f"Video file not created for entry {entry.get('id', 'unknown')}")
                     except Exception as e:
                         logger.error(f"Failed to download video from entry: {e}")
-                        # Неудача – пробуем изображение
 
                 if not video_success:
                     # Пытаемся скачать изображение
                     img_url = None
-                    # Прямая ссылка на изображение (если есть)
                     if entry.get('url') and entry.get('ext') in ('jpg', 'png', 'jpeg', 'webp'):
                         img_url = entry['url']
-                    # Или используем последний thumbnail
                     elif entry.get('thumbnails'):
                         img_url = entry['thumbnails'][-1]['url']
-                    # Или может быть поле 'thumbnail' напрямую
                     elif entry.get('thumbnail'):
                         img_url = entry['thumbnail']
 
                     if img_url:
                         img_path = downloader._download_image(img_url, f"image_{entry.get('id', 'unknown')}.jpg")
-                        if img_path:
+                        if img_path and os.path.exists(img_path):
                             files_to_send.append(("image", img_path))
                         else:
-                            logger.error(f"Failed to download image from {img_url}")
+                            logger.error(f"Failed to download image for entry {entry.get('id', 'unknown')}")
                     else:
                         logger.error(f"No image URL found for entry {entry.get('id', 'unknown')}")
-                    
+        else:
             # Одиночный пост
-            if 'duration' in info:  # видео (даже если длительность 0, но скорее всего это видео)
+            if 'duration' in info:
                 try:
                     video_file, _ = downloader.download_best_video(link)
                     if video_file and os.path.exists(video_file):
@@ -118,86 +111,78 @@ def process_link(chat_id: int, link: str):
                 except Exception as e:
                     logger.error(f"Failed to download video: {e}")
             elif info.get('url') and info.get('ext') in ('jpg', 'png', 'jpeg'):
-                # Прямая ссылка на изображение
                 img_path = downloader._download_image(info['url'], f"image.{info['ext']}")
-                if img_path:
+                if img_path and os.path.exists(img_path):
                     files_to_send.append(("image", img_path))
-            # Дополнительно: если есть thumbnails и нет видео, скачиваем как изображение
             elif info.get('thumbnails') and not files_to_send:
                 thumb_url = info['thumbnails'][-1]['url']
                 img_path = downloader._download_image(thumb_url, "thumbnail.jpg")
-                if img_path:
+                if img_path and os.path.exists(img_path):
                     files_to_send.append(("image", img_path))
 
-        # Если ничего не найдено, но есть описание – отправляем только текст
         if not files_to_send and not description:
             max_bot.send_message(chat_id, "Не удалось найти медиа по вашей ссылке.")
             return
 
-        if not files_to_send and not description:
-            max_bot.send_message(chat_id, "Не удалось найти медиа по вашей ссылке.")
-            return
-
+        # Отправка файлов
         for file_type, file_path in files_to_send:
-            # Получаем токен (с загрузкой на CDN внутри)
+            if not os.path.exists(file_path):
+                logger.error(f"File {file_path} does not exist, skipping")
+                continue
+
             try:
                 token = max_bot.upload_file(file_path, file_type)
                 if token is None:
                     logger.error("No token received, using fallback")
-                    if yandex:
-                        public_url = yandex.upload_file(file_path)
-                        max_bot.send_message(chat_id, f"Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}")
+                    if yandex and os.path.exists(file_path):
+                        try:
+                            public_url = yandex.upload_file(file_path)
+                            max_bot.send_message(chat_id, f"Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}")
+                        except Exception as e2:
+                            logger.error(f"Yandex fallback failed: {e2}")
+                            max_bot.send_message(chat_id, "Ошибка при обработке файла.")
                     else:
                         max_bot.send_message(chat_id, "Не удалось отправить файл.")
-                    continue  # переходим к следующему файлу, если они есть
+                    continue
             except Exception as e:
                 logger.error(f"Failed to upload {file_path} to MAX: {e}")
-                if yandex:
+                if yandex and os.path.exists(file_path):
                     try:
                         public_url = yandex.upload_file(file_path)
-                        max_bot.send_message(
-                            chat_id,
-                            f"Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}"
-                        )
+                        max_bot.send_message(chat_id, f"Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}")
                     except Exception as e2:
                         logger.error(f"Yandex fallback failed: {e2}")
                         max_bot.send_message(chat_id, "Ошибка при обработке файла.")
                 continue
 
-            # Токен получен, теперь пытаемся отправить сообщение с увеличивающимися паузами
+            # Отправка с подписью
             attachment = max_bot.build_attachment(file_type, token)
+            caption = f"Скачано через @{BOT_USERNAME}" if BOT_USERNAME else "Скачано через бота"
             max_retries = 5
             success = False
             for attempt in range(max_retries):
                 try:
-                    # Пауза растёт: 2, 4, 8, 16, 32 секунды
                     wait_time = 2 ** (attempt + 1)
                     time.sleep(wait_time)
-            
-                    caption = f"Скачано через @{BOT_USERNAME}" if BOT_USERNAME else "Скачано через бота"
                     max_bot.send_message(chat_id, caption, attachments=[attachment])
                     logger.error(f"Message sent successfully on attempt {attempt+1}")
                     success = True
                     break
                 except Exception as e:
                     logger.error(f"Send attempt {attempt+1} failed: {e}")
-                    # Если это последняя попытка, переходим к fallback
                     if attempt == max_retries - 1:
                         logger.error("All send attempts exhausted, using fallback")
-                        if yandex:
+                        if yandex and os.path.exists(file_path):
                             try:
                                 public_url = yandex.upload_file(file_path)
-                                max_bot.send_message(
-                                    chat_id,
-                                    f"Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}"
-                                )
+                                max_bot.send_message(chat_id, f"Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}")
                             except Exception as e2:
                                 logger.error(f"Yandex fallback failed: {e2}")
                                 max_bot.send_message(chat_id, "Ошибка при обработке файла.")
-            # Если успешно, небольшая пауза перед следующим файлом
             if success:
                 time.sleep(1)
 
+        # Отправка описания и доната
         if description:
             if len(description) > 4000:
                 description = description[:4000] + "..."
