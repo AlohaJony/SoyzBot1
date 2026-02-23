@@ -171,7 +171,8 @@ def process_link(chat_id: int, link: str):
                     time.sleep(wait_time)
             
                     caption = f"Скачано через @{BOT_USERNAME}" if BOT_USERNAME else "Скачано через бота"
-                    max_bot.send_message(chat_id, caption, attachments=[attachment])                    logger.error(f"Message sent successfully on attempt {attempt+1}")
+                    max_bot.send_message(chat_id, caption, attachments=[attachment])
+                    logger.error(f"Message sent successfully on attempt {attempt+1}")
                     success = True
                     break
                 except Exception as e:
