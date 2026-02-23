@@ -34,6 +34,7 @@ def process_link(chat_id: int, link: str):
         if info.get('_type') == 'playlist' or 'entries' in info:
             # Это плейлист/карусель (Instagram пост с несколькими элементами)
             for entry in info['entries']:
+                logger.error(f"Entry keys: {list(entry.keys())}")
                 if not entry:
                     continue
                 # Проверяем, есть ли у entry длительность (видео)
