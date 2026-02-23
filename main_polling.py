@@ -1,3 +1,4 @@
+
 import time
 import logging
 from config import MAX_BOT_TOKEN, YANDEX_DISK_TOKEN, DONATE_URL
@@ -11,6 +12,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 max_bot = MaxBotClient(MAX_BOT_TOKEN)
+try:
+    bot_info = max_bot.get_me()
+    BOT_ID = bot_info['user_id']
+    logger.info(f"Bot ID: {BOT_ID}")
+except Exception as e:
+    logger.error(f"Failed to get bot info: {e}")
+    BOT_ID = None
 yandex = YandexDiskUploader(YANDEX_DISK_TOKEN) if YANDEX_DISK_TOKEN else None
 
 user_state = {}  # chat_id -> state
@@ -32,6 +40,8 @@ def process_link(chat_id: int, link: str):
 
         # Обработка в зависимости от типа контента
         if info.get('_type') == 'playlist' or 'entries' in info:
+            entries = info.get('entries', [])
+            logger.info(f"Processing playlist with {len(entries)} entries")
             # Это плейлист/карусель (Instagram пост с несколькими элементами)
             for entry in info['entries']:
                 logger.error(f"Entry keys: {list(entry.keys())}")
@@ -45,10 +55,14 @@ def process_link(chat_id: int, link: str):
                     except Exception as e:
                         logger.error(f"Failed to download video from entry: {e}")
                 else:
-                    # Возможно, изображение: пробуем скачать превью
-                    if entry.get('thumbnails'):
-                        thumb_url = entry['thumbnails'][-1]['url']
-                        img_path = downloader._download_image(thumb_url, f"image_{entry.get('id', 'unknown')}.jpg")
+                     # Пытаемся скачать изображение
+                    img_url = None
+                    if entry.get('url') and entry.get('ext') in ('jpg', 'png', 'jpeg'):
+                        img_url = entry['url']
+                    elif entry.get('thumbnails'):
+                        img_url = entry['thumbnails'][-1]['url']
+                    if img_url:
+                        img_path = downloader._download_image(img_url, f"image_{entry.get('id', 'unknown')}.jpg")
                         if img_path:
                             files_to_send.append(("image", img_path))
         else:
@@ -170,6 +184,12 @@ def handle_update(update):
             return
         text = msg.get("body", {}).get("text", "").strip()
         sender = msg.get("sender", {})
+        sender_id = sender.get("user_id")
+        # Игнорируем сообщения от самого бота
+        if sender_id == BOT_ID:
+            logger.info("Ignoring message from self")
+            return
+        # Также можно оставить проверку is_bot для надёжности
         if sender.get("is_bot"):
             return
 
