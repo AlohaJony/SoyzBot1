@@ -37,10 +37,12 @@ max_bot = MaxBotClient(MAX_BOT_TOKEN)
 try:
     bot_info = max_bot.get_me()
     BOT_ID = bot_info['user_id']
-    logger.info(f"Bot ID: {BOT_ID}")
+    BOT_USERNAME = bot_info.get('username')  # добавьте эту строку
+    logger.info(f"Bot ID: {BOT_ID}, username: @{BOT_USERNAME}")
 except Exception as e:
     logger.error(f"Failed to get bot info: {e}")
     BOT_ID = None
+    BOT_USERNAME = None
 
 yandex = YandexDiskUploader(YANDEX_DISK_TOKEN) if YANDEX_DISK_TOKEN else None
 
@@ -70,30 +72,40 @@ def process_link(chat_id: int, link: str):
                 logger.error(f"Entry keys: {list(entry.keys())}")
                 if not entry:
                     continue
-                # Проверяем, есть ли у entry длительность (видео)
-                if entry.get('duration'):
+
+                # Пытаемся скачать видео (если есть длительность или это видео)
+                video_success = False
+                if entry.get('duration') or entry.get('ext') in ('mp4', 'mov'):  # предположим, что видео
                     try:
                         video_file, _ = downloader.download_best_video(entry['webpage_url'])
                         files_to_send.append(("video", video_file))
+                        video_success = True
                     except Exception as e:
                         logger.error(f"Failed to download video from entry: {e}")
-                else:
+                        # Неудача – пробуем изображение
+
+                if not video_success:
                     # Пытаемся скачать изображение
                     img_url = None
-                    # Сначала пробуем прямую ссылку на изображение (если есть)
-                    if entry.get('url') and entry.get('ext') in ('jpg', 'png', 'jpeg'):
+                    # Прямая ссылка на изображение (если есть)
+                    if entry.get('url') and entry.get('ext') in ('jpg', 'png', 'jpeg', 'webp'):
                         img_url = entry['url']
-                    # Если нет, используем последний thumbnail
+                    # Или используем последний thumbnail
                     elif entry.get('thumbnails'):
                         img_url = entry['thumbnails'][-1]['url']
-    
+                    # Или может быть поле 'thumbnail' напрямую
+                    elif entry.get('thumbnail'):
+                        img_url = entry['thumbnail']
+
                     if img_url:
                         img_path = downloader._download_image(img_url, f"image_{entry.get('id', 'unknown')}.jpg")
                         if img_path:
                             files_to_send.append(("image", img_path))
+                        else:
+                            logger.error(f"Failed to download image from {img_url}")
                     else:
                         logger.error(f"No image URL found for entry {entry.get('id', 'unknown')}")
-        else:
+                    
             # Одиночный пост
             if info.get('duration'):  # видео
                 try:
@@ -158,8 +170,8 @@ def process_link(chat_id: int, link: str):
                     wait_time = 2 ** (attempt + 1)
                     time.sleep(wait_time)
             
-                    max_bot.send_message(chat_id, "", attachments=[attachment])
-                    logger.error(f"Message sent successfully on attempt {attempt+1}")
+                    caption = f"Скачано через @{BOT_USERNAME}" if BOT_USERNAME else "Скачано через бота"
+                    max_bot.send_message(chat_id, caption, attachments=[attachment])                    logger.error(f"Message sent successfully on attempt {attempt+1}")
                     success = True
                     break
                 except Exception as e:
@@ -200,57 +212,53 @@ def process_link(chat_id: int, link: str):
         downloader.cleanup()
 
 def handle_update(update):
-    
     logger.error(f"UPDATE RECEIVED: {update}")
     update_type = update.get("update_type")
     if update_type == "message_created":
         msg = update.get("message", {})
         mid = msg.get("body", {}).get("mid")
+        # Проверка на дубликат (опционально)
         if mid and mid in processed_mids:
             logger.info(f"Message {mid} already processed, skipping")
             return
-            # после успешной обработки добавьте в множество
+
         chat_id = msg.get("recipient", {}).get("chat_id") or msg.get("recipient", {}).get("user_id")
         if not chat_id:
             logger.error("No chat_id in message")
             return
         text = msg.get("body", {}).get("text", "").strip()
         sender = msg.get("sender", {})
-        # Проверяем наличие sender
         if not sender:
             logger.error("No sender in message")
             return
         sender_id = sender.get("user_id")
-        logger.error(f"BOT_ID={BOT_ID}, sender_id={sender_id if 'sender' in locals() else 'undefined'}")
         if sender_id is None:
             logger.error("sender_id is None")
             return
-
-        # Игнорируем сообщения от самого бота
+        # Игнорируем свои сообщения
         if sender_id == BOT_ID:
             logger.info(f"Ignoring message from self (sender_id={sender_id})")
             return
-        # Также игнорируем любые сообщения от других ботов
         if sender.get("is_bot"):
             logger.info("Ignoring message from another bot")
             return
 
-        if text == "/start":
+        # Обработка команд и ссылок
+        if text.startswith("http"):
+            process_link(chat_id, text)
+        elif text == "/start":
             welcome = (
                 "Привет! Я бот для скачивания видео, изображений и описаний из постов.\n"
                 "Просто отправь мне ссылку на пост, и я пришлю тебе контент."
             )
             max_bot.send_message(chat_id, welcome)
-            user_state[chat_id] = "waiting_link"
-        elif user_state.get(chat_id) == "waiting_link" and text.startswith("http"):
-            process_link(chat_id, text)
-            user_state[chat_id] = None
         else:
             max_bot.send_message(chat_id, "Отправьте ссылку для обработки или /start для начала.")
-        # после успешной обработки добавляем mid в множество
+
+        # Добавляем mid в обработанные (после успешной обработки)
         if mid:
             processed_mids.add(mid)
-            
+
     elif update_type == "bot_started":
         chat_id = update.get("chat_id")
         if chat_id:
@@ -259,7 +267,6 @@ def handle_update(update):
                 "Просто отправь мне ссылку на пост, и я пришлю тебе контент."
             )
             max_bot.send_message(chat_id, welcome)
-            user_state[chat_id] = "waiting_link"
 
 def main():
     logger.info("Starting MAX bot (polling mode)...")
