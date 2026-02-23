@@ -15,14 +15,19 @@ def load_marker():
     if os.path.exists(MARKER_FILE):
         with open(MARKER_FILE, "r") as f:
             try:
-                return int(f.read().strip())
-            except:
+                val = int(f.read().strip())
+                logger.info(f"✅ Loaded marker: {val}")
+                return val
+            except Exception as e:
+                logger.error(f"❌ Failed to parse marker file: {e}")
                 return None
+    logger.info("📁 Marker file not found, starting from None")
     return None
 
 def save_marker(marker):
     with open(MARKER_FILE, "w") as f:
         f.write(str(marker))
+    logger.info(f"💾 Saved marker: {marker}")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -194,7 +199,7 @@ def process_link(chat_id: int, link: str):
         downloader.cleanup()
 
 def handle_update(update):
-    logger.error(f"BOT_ID={BOT_ID}, sender_id={sender_id if 'sender' in locals() else 'undefined'}")
+    
     logger.error(f"UPDATE RECEIVED: {update}")
     update_type = update.get("update_type")
     if update_type == "message_created":
@@ -215,6 +220,7 @@ def handle_update(update):
             logger.error("No sender in message")
             return
         sender_id = sender.get("user_id")
+        logger.error(f"BOT_ID={BOT_ID}, sender_id={sender_id if 'sender' in locals() else 'undefined'}")
         if sender_id is None:
             logger.error("sender_id is None")
             return
@@ -257,6 +263,12 @@ def handle_update(update):
 def main():
     logger.info("Starting MAX bot (polling mode)...")
     marker = load_marker()
+    try:
+        with open(MARKER_FILE, "a") as f:
+            f.write("")
+        logger.info(f"✅ Marker file is writable: {MARKER_FILE}")
+    except Exception as e:
+        logger.error(f"❌ Cannot write marker file: {e}")
     while True:
         try:
             updates_data = max_bot.get_updates(marker=marker, timeout=30)
