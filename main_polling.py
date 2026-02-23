@@ -55,6 +55,7 @@ def process_link(chat_id: int, link: str):
 
     try:
         info = downloader.extract_info(link)
+        logger.error(f"Duration from info: {info.get('duration')}")
         files_to_send = []
         description = downloader.get_description(info)
         logger.error("Starting loop over entries")
@@ -107,10 +108,13 @@ def process_link(chat_id: int, link: str):
                         logger.error(f"No image URL found for entry {entry.get('id', 'unknown')}")
                     
             # Одиночный пост
-            if info.get('duration'):  # видео
+            if 'duration' in info:  # видео (даже если длительность 0, но скорее всего это видео)
                 try:
                     video_file, _ = downloader.download_best_video(link)
-                    files_to_send.append(("video", video_file))
+                    if video_file and os.path.exists(video_file):
+                        files_to_send.append(("video", video_file))
+                    else:
+                        logger.error(f"Video file not created for {link}")
                 except Exception as e:
                     logger.error(f"Failed to download video: {e}")
             elif info.get('url') and info.get('ext') in ('jpg', 'png', 'jpeg'):

@@ -65,6 +65,9 @@ class MaxBotClient:
         import time
         from requests.exceptions import RequestException
         import xml.etree.ElementTree as ET
+        if not os.path.exists(file_path):
+            logger.error(f"File {file_path} does not exist, skipping")
+            continue
 
         file_size = os.path.getsize(file_path)
         logger.error(f"Uploading file: {os.path.basename(file_path)}, size: {file_size} bytes, type: {file_type}")
