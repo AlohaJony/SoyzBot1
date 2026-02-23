@@ -220,7 +220,7 @@ def handle_update(update):
             return
 
         # Игнорируем сообщения от самого бота
-        if sender_id    q1§:
+        if sender_id == BOT_ID:
             logger.info(f"Ignoring message from self (sender_id={sender_id})")
             return
         # Также игнорируем любые сообщения от других ботов
