@@ -13,16 +13,17 @@ MARKER_FILE = os.path.join(BASE_DIR, "marker.txt")
 
 def load_marker():
     if os.path.exists(MARKER_FILE):
-        with open(MARKER_FILE, "r") as f:
-            try:
+        try:
+            with open(MARKER_FILE, "r") as f:
                 val = int(f.read().strip())
                 logger.info(f"✅ Loaded marker: {val}")
                 return val
-            except Exception as e:
-                logger.error(f"❌ Failed to parse marker file: {e}")
-                return None
-    logger.info("📁 Marker file not found, starting from None")
-    return None
+        except Exception as e:
+            logger.error(f"❌ Failed to parse marker file: {e}")
+    # Если файла нет или ошибка, возвращаем маркер "5 минут назад"
+    fallback = int(time.time() * 1000) - 5 * 60 * 1000
+    logger.info(f"📁 Using fallback marker (5 minutes ago): {fallback}")
+    return fallback
 
 def save_marker(marker):
     with open(MARKER_FILE, "w") as f:
