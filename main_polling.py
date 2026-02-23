@@ -56,16 +56,21 @@ def process_link(chat_id: int, link: str):
                     except Exception as e:
                         logger.error(f"Failed to download video from entry: {e}")
                 else:
-                     # Пытаемся скачать изображение
+                    # Пытаемся скачать изображение
                     img_url = None
+                    # Сначала пробуем прямую ссылку на изображение (если есть)
                     if entry.get('url') and entry.get('ext') in ('jpg', 'png', 'jpeg'):
                         img_url = entry['url']
+                    # Если нет, используем последний thumbnail
                     elif entry.get('thumbnails'):
                         img_url = entry['thumbnails'][-1]['url']
+    
                     if img_url:
                         img_path = downloader._download_image(img_url, f"image_{entry.get('id', 'unknown')}.jpg")
                         if img_path:
                             files_to_send.append(("image", img_path))
+                    else:
+                        logger.error(f"No image URL found for entry {entry.get('id', 'unknown')}")
         else:
             # Одиночный пост
             if info.get('duration'):  # видео
@@ -90,10 +95,6 @@ def process_link(chat_id: int, link: str):
         if not files_to_send and not description:
             max_bot.send_message(chat_id, "Не удалось найти медиа по вашей ссылке.")
             return
-            
-        images = downloader.download_all_images(link)
-        for img in images:
-            files_to_send.append(("image", img))
 
         if not files_to_send and not description:
             max_bot.send_message(chat_id, "Не удалось найти медиа по вашей ссылке.")

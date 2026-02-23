@@ -114,10 +114,6 @@ class MaxBotClient:
             # Для image/file токен должен быть в ответе CDN (JSON)
             try:
                 result = resp.json()
-                return result.get("token") or result.get("photo_id")
-            except ValueError:
-                # Если ответ не JSON (например, XML), логируем и возвращаем None
-                # ... после получения result = resp.json()
                 logger.error(f"CDN response JSON: {result}")
 
                 # Извлекаем токен из разных возможных структур
@@ -142,6 +138,9 @@ class MaxBotClient:
                 else:
                     logger.error(f"Could not extract token from CDN response for {file_type}")
                     return None
+            except ValueError:
+                logger.error("CDN response is not JSON, cannot extract token")
+                return None
 
     def build_attachment(self, file_type: str, token: str) -> Dict:
         return {"type": file_type, "payload": {"token": token}}
