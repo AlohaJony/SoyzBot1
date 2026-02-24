@@ -223,7 +223,8 @@ def process_link(chat_id: int, link: str):
             max_bot.send_message(chat_id, description, format="html")
             logger.info("📝 Description sent")
 
-        donate_msg = "✅ Готово!\n\nЕсли вам помог бот, поддержите проект:"
+        # Отправка доната с inline-кнопкой
+        donate_msg = "✅ <b>Готово!</b>\n\nЕсли вам помог бот, поддержите проект:"
         donate_button = {
             "type": "inline_keyboard",
             "payload": {
@@ -237,8 +238,8 @@ def process_link(chat_id: int, link: str):
                     ]
                 ]
             }
-        }
-        max_bot.send_message(chat_id, donate_msg, attachments=[donate_button])
+        }   
+        max_bot.send_message(chat_id, donate_msg, format="html", attachments=[donate_button])
         logger.info("❤️ Donate message sent")
 
     except Exception as e:
