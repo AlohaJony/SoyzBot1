@@ -139,7 +139,7 @@ def process_link(chat_id: int, link: str):
                     else:
                         logger.error("❌ Video file not created")
                 except Exception as e:
-                    logger.error(f"❌ Failed to download video: {e}")
+                    logger.error(f"❌ Failed to download video from entry {idx+1}: {e}", exc_info=True)
             elif info.get('url') and info.get('ext') in ('jpg', 'png', 'jpeg'):
                 img_path = downloader._download_image(info['url'], f"image.{info['ext']}")
                 if img_path and os.path.exists(img_path):
@@ -153,7 +153,7 @@ def process_link(chat_id: int, link: str):
                     logger.info(f"✅ Thumbnail downloaded: {img_path}")
 
         if not files_to_send and not description:
-            max_bot.send_message(chat_id, "❌ Не удалось найти медиа по вашей ссылке.")
+            max_bot.send_message(chat_id, f"❌ Не удалось скачать медиа, но пост доступен по ссылке:\n{link}")
             return
         else:
             logger.info(f"📦 Total files to send: {len(files_to_send)}")

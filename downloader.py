@@ -13,7 +13,7 @@ class MediaDownloader:
         self.temp_dir = temp_dir or tempfile.mkdtemp()
 
     def extract_info(self, url: str) -> Dict:
-        ydl_opts = {"quiet": True, "no_warnings": True}
+        ydl_opts = {"quiet": True, "no_warnings": True, "cookiefile": "cookies.txt"}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             # Логируем структуру (только ключи, чтобы не засорять)
@@ -39,6 +39,7 @@ class MediaDownloader:
                     "outtmpl": os.path.join(self.temp_dir, "%(title)s.%(ext)s"),
                     "quiet": True,
                     "no_warnings": True,
+                    "cookiefile": "cookies.txt",
                 }
                 # Если требуется слияние, но ffmpeg отсутствует, можно пропустить
                 if strat["merge"]:
