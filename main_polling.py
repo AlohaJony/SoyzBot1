@@ -90,7 +90,7 @@ def process_link(chat_id: int, link: str):
                         logger.info(f"🎬 Attempting to download video from entry {idx+1}")
                         video_file, _ = downloader.download_best_video(entry_url)
                         if video_file and os.path.exists(video_file):
-                            files_to_send.append(("video", video_file))
+                            files_to_send.append(("file", video_file))
                             logger.info(f"✅ Video from entry {idx+1} downloaded: {video_file}")
                             video_success = True
                         else:
@@ -134,7 +134,7 @@ def process_link(chat_id: int, link: str):
                 try:
                     video_file, _ = downloader.download_best_video(link)
                     if video_file and os.path.exists(video_file):
-                        files_to_send.append(("video", video_file))
+                        files_to_send.append(("file", video_file))
                         logger.info(f"✅ Video downloaded: {video_file}")
                     else:
                         logger.error("❌ Video file not created")
