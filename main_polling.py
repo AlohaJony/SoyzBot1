@@ -371,6 +371,10 @@ def main():
             updates_data = max_bot.get_updates(marker=marker, timeout=30)
             updates = updates_data.get("updates", [])
             new_marker = updates_data.get("marker")
+            updates_data = max_bot.get_updates(marker=marker, timeout=30)
+            logger.info(f"Получены обновления: {updates_data}")  # новая строка
+            updates = updates_data.get("updates", [])
+            logger.info(f"Количество обновлений: {len(updates)}")  # новая строка
             if new_marker is not None:
                 marker = new_marker
                 save_marker(marker)

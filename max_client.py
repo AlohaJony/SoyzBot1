@@ -33,6 +33,7 @@ class MaxBotClient:
 
     # Long polling
     def get_updates(self, marker: Optional[int] = None, timeout: int = 30, limit: int = 100) -> Dict[str, Any]:
+        logger.info(f"Calling get_updates with marker={marker}, timeout={timeout}")
         params = {"timeout": timeout, "limit": limit}
         if marker:
             params["marker"] = marker
