@@ -70,110 +70,106 @@ def process_link(chat_id: int, link: str):
     description = None
 
     try:
-        
-        else:
-            # YouTube / Instagram
-            info = downloader.extract_info(link)
-            logger.error(f"Duration from info: {info.get('duration')}")
-            description = downloader.get_description(info)
+        info = downloader.extract_info(link)
+        logger.error(f"Duration from info: {info.get('duration')}")
+        description = downloader.get_description(info)
 
-            # Определяем, плейлист (карусель) или одиночный пост
-            entries = info.get('entries')
-            if entries and isinstance(entries, list) and len(entries) > 0:
-                logger.info(f"📦 Processing playlist with {len(entries)} entries")
-                for idx, entry in enumerate(entries):
-                    logger.error(f"🔍 Entry {idx+1} keys: {list(entry.keys())}")
-                    if not entry:
-                        continue
+        # Определяем, плейлист (карусель) или одиночный пост
+        entries = info.get('entries')
+        if entries and isinstance(entries, list) and len(entries) > 0:
+            logger.info(f"📦 Processing playlist with {len(entries)} entries")
+            for idx, entry in enumerate(entries):
+                logger.error(f"🔍 Entry {idx+1} keys: {list(entry.keys())}")
+                if not entry:
+                    continue
 
-                    entry_url = entry.get('webpage_url') or entry.get('url')
-                    if not entry_url:
-                        logger.error(f"❌ Entry {idx+1} has no webpage_url, skipping")
-                        continue
+                entry_url = entry.get('webpage_url') or entry.get('url')
+                if not entry_url:
+                    logger.error(f"❌ Entry {idx+1} has no webpage_url, skipping")
+                    continue
 
-                    # Определяем, является ли элемент видео
-                    is_video = False
-                    if entry.get('duration'):
-                        is_video = True
-                    elif entry.get('ext') in ('mp4', 'mov', 'm4a', 'webm'):
-                        is_video = True
-                    elif entry.get('vcodec') and entry['vcodec'] != 'none':
-                        is_video = True
+                # Определяем, является ли элемент видео
+                is_video = False
+                if entry.get('duration'):
+                    is_video = True
+                elif entry.get('ext') in ('mp4', 'mov', 'm4a', 'webm'):
+                    is_video = True
+                elif entry.get('vcodec') and entry['vcodec'] != 'none':
+                    is_video = True
 
-                    # Пытаемся скачать видео
-                    video_success = False
-                    if is_video:
-                        try:
-                            logger.info(f"🎬 Attempting to download video from entry {idx+1}")
-                            video_file, _ = downloader.download_best_video(entry_url)
-                            if video_file and os.path.exists(video_file):
-                                files_to_send.append(("video", video_file))
-                                logger.info(f"✅ Video from entry {idx+1} downloaded: {video_file}")
-                                video_success = True
-                            else:
-                                logger.error(f"❌ Video file not created for entry {idx+1}")
-                        except Exception as e:
-                            logger.error(f"❌ Failed to download video from entry {idx+1}: {e}")
-
-                    # Если видео не удалось или это не видео, пробуем изображение
-                    if not video_success:
-                        logger.info(f"🖼️ Attempting to download image from entry {idx+1}")
-                        img_url = None
-                        # Прямая ссылка на изображение
-                        if entry.get('url') and entry.get('ext') in ('jpg', 'png', 'jpeg', 'webp'):
-                            img_url = entry['url']
-                        elif entry.get('thumbnails'):
-                            img_url = entry['thumbnails'][-1]['url']
-                        elif entry.get('thumbnail'):
-                            img_url = entry['thumbnail']
-                        elif entry.get('display_url'):
-                            img_url = entry['display_url']
-                        elif entry.get('image_url'):
-                            img_url = entry['image_url']
-
-                        if img_url:
-                            img_path = downloader._download_image(img_url, f"image_{entry.get('id', f'entry_{idx}')}.jpg")
-                            if img_path and os.path.exists(img_path):
-                                files_to_send.append(("image", img_path))
-                                logger.info(f"✅ Image from entry {idx+1} downloaded: {img_path}")
-                            else:
-                                logger.error(f"❌ Failed to download image for entry {idx+1} from {img_url}")
-                        else:
-                            logger.error(f"❌ No image URL found for entry {idx+1}")
-
-            else:
-                # Одиночный пост
-                logger.info("📄 Single post processing")
-                if 'duration' in info:
+                # Пытаемся скачать видео
+                video_success = False
+                if is_video:
                     try:
-                        video_file, _ = downloader.download_best_video(link)
+                        logger.info(f"🎬 Attempting to download video from entry {idx+1}")
+                        video_file, _ = downloader.download_best_video(entry_url)
                         if video_file and os.path.exists(video_file):
                             files_to_send.append(("video", video_file))
-                            logger.info(f"✅ Video downloaded: {video_file}")
+                            logger.info(f"✅ Video from entry {idx+1} downloaded: {video_file}")
+                            video_success = True
                         else:
-                            logger.error("❌ Video file not created")
+                            logger.error(f"❌ Video file not created for entry {idx+1}")
                     except Exception as e:
-                        logger.error(f"❌ Failed to download video: {e}", exc_info=True)
-                elif info.get('url') and info.get('ext') in ('jpg', 'png', 'jpeg'):
-                    img_path = downloader._download_image(info['url'], f"image.{info['ext']}")
-                    if img_path and os.path.exists(img_path):
-                        files_to_send.append(("image", img_path))
-                        logger.info(f"✅ Image downloaded: {img_path}")
-                elif info.get('thumbnails') and not files_to_send:
-                    thumb_url = info['thumbnails'][-1]['url']
-                    img_path = downloader._download_image(thumb_url, "thumbnail.jpg")
-                    if img_path and os.path.exists(img_path):
-                        files_to_send.append(("image", img_path))
-                        logger.info(f"✅ Thumbnail downloaded: {img_path}")
+                        logger.error(f"❌ Failed to download video from entry {idx+1}: {e}")
 
-        # Проверка на наличие файлов или описания
+                # Если видео не удалось или это не видео, пробуем изображение
+                if not video_success:
+                    logger.info(f"🖼️ Attempting to download image from entry {idx+1}")
+                    img_url = None
+                    # Прямая ссылка на изображение
+                    if entry.get('url') and entry.get('ext') in ('jpg', 'png', 'jpeg', 'webp'):
+                        img_url = entry['url']
+                    elif entry.get('thumbnails'):
+                        img_url = entry['thumbnails'][-1]['url']
+                    elif entry.get('thumbnail'):
+                        img_url = entry['thumbnail']
+                    elif entry.get('display_url'):
+                        img_url = entry['display_url']
+                    elif entry.get('image_url'):
+                        img_url = entry['image_url']
+
+                    if img_url:
+                        img_path = downloader._download_image(img_url, f"image_{entry.get('id', f'entry_{idx}')}.jpg")
+                        if img_path and os.path.exists(img_path):
+                            files_to_send.append(("image", img_path))
+                            logger.info(f"✅ Image from entry {idx+1} downloaded: {img_path}")
+                        else:
+                            logger.error(f"❌ Failed to download image for entry {idx+1} from {img_url}")
+                    else:
+                        logger.error(f"❌ No image URL found for entry {idx+1}")
+
+        else:
+            # Одиночный пост
+            logger.info("📄 Single post processing")
+            if 'duration' in info:
+                try:
+                    video_file, _ = downloader.download_best_video(link)
+                    if video_file and os.path.exists(video_file):
+                        files_to_send.append(("video", video_file))
+                        logger.info(f"✅ Video downloaded: {video_file}")
+                    else:
+                        logger.error("❌ Video file not created")
+                except Exception as e:
+                    logger.error(f"❌ Failed to download video: {e}", exc_info=True)
+            elif info.get('url') and info.get('ext') in ('jpg', 'png', 'jpeg'):
+                img_path = downloader._download_image(info['url'], f"image.{info['ext']}")
+                if img_path and os.path.exists(img_path):
+                    files_to_send.append(("image", img_path))
+                    logger.info(f"✅ Image downloaded: {img_path}")
+            elif info.get('thumbnails') and not files_to_send:
+                thumb_url = info['thumbnails'][-1]['url']
+                img_path = downloader._download_image(thumb_url, "thumbnail.jpg")
+                if img_path and os.path.exists(img_path):
+                    files_to_send.append(("image", img_path))
+                    logger.info(f"✅ Thumbnail downloaded: {img_path}")
+
         if not files_to_send and not description:
             max_bot.send_message(chat_id, f"❌ Не удалось скачать медиа, но пост доступен по ссылке:\n{link}")
             return
 
         logger.info(f"📦 Total files to send: {len(files_to_send)}")
 
-        # --- Отправка файлов (общий код) ---
+        # Отправка файлов
         for file_type, file_path in files_to_send:
             if not os.path.exists(file_path):
                 logger.error(f"❌ File {file_path} does not exist, skipping")
@@ -246,7 +242,7 @@ def process_link(chat_id: int, link: str):
             if success:
                 time.sleep(1)
 
-        # --- Отправка описания и доната ---
+        # Отправка описания и доната
         if description:
             if len(description) > 4000:
                 description = description[:4000] + "..."
