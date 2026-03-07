@@ -7,7 +7,6 @@ from downloader import MediaDownloader
 from yandex_disk import YandexDiskUploader
 from utils import TempDir
 import traceback
-from pinterest_downloader import PinterestDownloader
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MARKER_FILE = os.path.join(BASE_DIR, "marker.txt")
@@ -71,19 +70,7 @@ def process_link(chat_id: int, link: str):
     description = None
 
     try:
-        # --- Определяем источник ---
-        if "pinterest.com" in link or "pin.it" in link:
-            # Pinterest
-            logger.info("📌 Обнаружена ссылка Pinterest")
-            try:
-                pinterest_dl = PinterestDownloader(temp.path)
-                files_to_send = pinterest_dl.download_from_url(link)
-                # У Pinterest нет описания
-            except Exception as e:
-                logger.error(f"Pinterest error: {e}", exc_info=True)
-                max_bot.send_message(chat_id, "❌ Не удалось обработать ссылку Pinterest. Попробуйте другую.")
-                downloader.cleanup()
-                return
+        
         else:
             # YouTube / Instagram
             info = downloader.extract_info(link)
