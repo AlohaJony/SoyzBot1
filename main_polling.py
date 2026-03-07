@@ -297,7 +297,6 @@ def handle_update(update):
     if update_type == "message_created":
         msg = update.get("message", {})
         mid = msg.get("body", {}).get("mid")
-        # Проверка на дубликат (опционально)
         if mid and mid in processed_mids:
             logger.info(f"Message {mid} already processed, skipping")
             return
@@ -315,7 +314,6 @@ def handle_update(update):
         if sender_id is None:
             logger.error("sender_id is None")
             return
-        # Игнорируем свои сообщения
         if sender_id == BOT_ID:
             logger.info(f"Ignoring message from self (sender_id={sender_id})")
             return
@@ -323,19 +321,19 @@ def handle_update(update):
             logger.info("Ignoring message from another bot")
             return
 
-        # Обработка команд и ссылок
+        # Проверка на ссылку
         if text.startswith("http"):
             if not is_supported_url(text):
                 unsupported_msg = (
                     "⛔️ Вы прислали ссылку, которая не поддерживается!\n\n"
                     "**Что поддерживается?**\n\n"
                     "📸 **Instagram**\nПоддерживается: фото, видео.\n\n"
-                        "📌 **Pinterest**\nПоддерживается: фото и видео.\n\n"
+                    "📌 **Pinterest**\nПоддерживается: фото и видео.\n\n"
                     "▶️ **YouTube**\nПоддерживается: видео."
                 )
                 max_bot.send_message(chat_id, unsupported_msg)
                 return
-        process_link(chat_id, text)
+            process_link(chat_id, text)
         elif text == "/start":
             welcome = (
                 "Добро пожаловать в СОЮЗ! 👋\n"
@@ -346,7 +344,6 @@ def handle_update(update):
         else:
             max_bot.send_message(chat_id, "Отправьте ссылку для обработки или /start для начала.")
 
-        # Добавляем mid в обработанные (после успешной обработки)
         if mid:
             processed_mids.add(mid)
 
