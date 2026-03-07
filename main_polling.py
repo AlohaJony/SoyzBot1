@@ -279,11 +279,6 @@ def handle_update(update):
     update_type = update.get("update_type")
     if update_type == "message_created":
         msg = update.get("message", {})
-        mid = msg.get("body", {}).get("mid")
-        if mid and mid in processed_mids:
-            logger.info(f"Message {mid} already processed, skipping")
-            return
-
         chat_id = msg.get("recipient", {}).get("chat_id") or msg.get("recipient", {}).get("user_id")
         if not chat_id:
             logger.error("No chat_id in message")
@@ -319,24 +314,19 @@ def handle_update(update):
             process_link(chat_id, text)
         elif text == "/start":
             welcome = (
-                "Добро пожаловать в СОЮЗ! 👋\n"
-                "Отправьте мне ссылку на пост из Instagram*, Pinterest или на видео с YouTube, и я выгружу для вас фото, видео или содержимое поста прямо сюда — быстро, чётко и без лишней бюрократии 📲 \n\n"
-                "*Instagram является продуктом компании Meta, которая признана в России экстремистской организацией."
+                "Привет! Я бот для скачивания видео, изображений и описаний из постов.\n"
+                "Просто отправь мне ссылку на пост, и я пришлю тебе контент."
             )
             max_bot.send_message(chat_id, welcome)
         else:
             max_bot.send_message(chat_id, "Отправьте ссылку для обработки или /start для начала.")
 
-        if mid:
-            processed_mids.add(mid)
-
     elif update_type == "bot_started":
         chat_id = update.get("chat_id")
         if chat_id:
             welcome = (
-                "Добро пожаловать в СОЮЗ! 👋\n"
-                "Отправьте мне ссылку на пост из Instagram*, Pinterest или на видео с YouTube, и я выгружу для вас фото, видео или содержимое поста прямо сюда — быстро, чётко и без лишней бюрократии 📲 \n\n"
-                "*Instagram является продуктом компании Meta, которая признана в России экстремистской организацией."
+                "Привет! Я бот для скачивания видео, изображений и описаний из постов.\n"
+                "Просто отправь мне ссылку на пост, и я пришлю тебе контент."
             )
             max_bot.send_message(chat_id, welcome)
 
