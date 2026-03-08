@@ -24,36 +24,35 @@ class MediaDownloader:
             return info
 
     def download_best_video(self, url: str) -> Tuple[str, Dict]:
-        # Попробуем несколько стратегий
-        strategies = [
-            {"format": "best[ext=mp4]/best", "merge": False},  # готовый mp4
-            {"format": "best", "merge": False},                # лучший без слияния
-            {"format": "bestvideo+bestaudio", "merge": True},  # требует ffmpeg
-        ]
-    
-        last_error = None
-        for strat in strategies:
-            try:
-                ydl_opts = {
-                    "format": strat["format"],
-                    "outtmpl": os.path.join(self.temp_dir, "%(title)s.%(ext)s"),
-                    "quiet": True,
-                    "no_warnings": True,
-                    "cookiefile": "cookies.txt",
-                }
-                # Если требуется слияние, но ffmpeg отсутствует, можно пропустить
-                if strat["merge"]:
-                    # Проверим наличие ffmpeg (опционально)
-                    pass  # пока просто пробуем
-            
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    filename = ydl.prepare_filename(info)
-                    return filename, info
-            except Exception as e:
-                last_error = e
-                continue
-        raise last_error or Exception("Не удалось скачать видео ни одним способом")
+        """
+        Скачивает видео в наилучшем доступном качестве,
+        объединяет видео и аудио в один MP4-файл.
+        """
+        ydl_opts = {
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'outtmpl': os.path.join(self.temp_dir, '%(title)s.%(ext)s'),
+            'quiet': True,
+            'no_warnings': True,
+            'cookiefile': 'cookies.txt',
+            'merge_output_format': 'mp4',
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4',
+            }],
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
+                # После слияния расширение может стать .mp4
+                if not os.path.exists(filename):
+                    base = os.path.splitext(filename)[0]
+                    if os.path.exists(base + '.mp4'):
+                        filename = base + '.mp4'
+                return filename, info
+        except Exception as e:
+            logger.error(f"Failed to download best video: {e}")
+            raise
 
     def download_thumbnail(self, url: str, info: Dict) -> Optional[str]:
         thumbnails = info.get("thumbnails", [])
