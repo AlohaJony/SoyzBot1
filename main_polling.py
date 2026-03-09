@@ -63,21 +63,23 @@ yandex = YandexDiskUploader(YANDEX_DISK_TOKEN) if YANDEX_DISK_TOKEN else None
 user_state = {}
 
 def process_link(chat_id: int, link: str):
+    logger.info(f"process_link called with link: {link} for chat {chat_id}")
     max_bot.send_action(chat_id, "typing_on")
     temp = TempDir()
     downloader = MediaDownloader(temp.path)
 
-    # --- Отправляем статусное сообщение ---
+        # Отправляем статусное сообщение
     status_mid = None
     try:
         status_resp = max_bot.send_message(chat_id, "⏳ Видео загружается, пожалуйста подождите...")
+        logger.info(f"Status message response: {status_resp}")
         status_mid = status_resp.get('body', {}).get('mid')
-        logger.info(f"Status message sent with mid: {status_mid}")
+        if status_mid:
+            logger.info(f"Status message sent with mid: {status_mid}")
+        else:
+            logger.warning("Could not extract mid from status message response")
     except Exception as e:
-        logger.warning(f"Failed to send status message: {e}")
-
-    files_to_send = []
-    description = None
+        logger.error(f"Failed to send status message: {e}", exc_info=True)
 
     try:
         # Получаем информацию о контенте (работает для YouTube, Instagram, Pinterest)
@@ -295,20 +297,19 @@ def process_link(chat_id: int, link: str):
                 max_bot.delete_message(message_id=status_mid, user_id=chat_id)
                 logger.info("Status message deleted")
             except Exception as e:
-                logger.warning(f"Failed to delete status message: {e}")
+                logger.error(f"Failed to delete status message: {e}", exc_info=True)
 
-    except Exception as e:
-        # В случае ошибки тоже пытаемся удалить статусное сообщение
-        if status_mid:
-            try:
-                max_bot.delete_message(message_id=status_mid, user_id=chat_id)
-            except Exception as e2:
-                pass
-        logger.error(f"🔥 Error: {traceback.format_exc()}")
-        max_bot.send_message(chat_id, "❌ Произошла ошибка при обработке ссылки. Попробуйте другую.")
-    finally:
-        downloader.cleanup()
-        logger.info("🧹 Temporary files cleaned up")
+        except Exception as e:
+            if status_mid:
+                try:
+                    max_bot.delete_message(message_id=status_mid, user_id=chat_id)
+                except:
+                    pass
+            logger.error(f"🔥 Error: {traceback.format_exc()}")
+            max_bot.send_message(chat_id, "❌ Произошла ошибка при обработке ссылки. Попробуйте другую.")
+        finally:
+            downloader.cleanup()
+            logger.info("🧹 Temporary files cleaned up")
 
 def handle_update(update):
     logger.error(f"UPDATE RECEIVED: {update}")
@@ -352,6 +353,7 @@ def handle_update(update):
                 )
                 max_bot.send_message(chat_id, unsupported_msg)
                 return
+            logger.info(f"Calling process_link for link: {text}")
             process_link(chat_id, text)
         elif text == "/start":
             welcome = (
