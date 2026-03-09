@@ -299,17 +299,17 @@ def process_link(chat_id: int, link: str):
             except Exception as e:
                 logger.error(f"Failed to delete status message: {e}", exc_info=True)
 
-        except Exception as e:
-            if status_mid:
-                try:
-                    max_bot.delete_message(message_id=status_mid, user_id=chat_id)
-                except:
-                    pass
-            logger.error(f"🔥 Error: {traceback.format_exc()}")
-            max_bot.send_message(chat_id, "❌ Произошла ошибка при обработке ссылки. Попробуйте другую.")
-        finally:
-            downloader.cleanup()
-            logger.info("🧹 Temporary files cleaned up")
+    except Exception as e:
+        if status_mid:
+            try:
+                max_bot.delete_message(message_id=status_mid, user_id=chat_id)
+            except:
+                pass
+        logger.error(f"🔥 Error: {traceback.format_exc()}")
+        max_bot.send_message(chat_id, "❌ Произошла ошибка при обработке ссылки. Попробуйте другую.")
+    finally:
+        downloader.cleanup()
+        logger.info("🧹 Temporary files cleaned up")
 
 def handle_update(update):
     logger.error(f"UPDATE RECEIVED: {update}")
