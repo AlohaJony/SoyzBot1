@@ -30,18 +30,18 @@ def load_marker():
         try:
             with open(MARKER_FILE, "r") as f:
                 val = int(f.read().strip())
-                logger.info(f"✅ Loaded marker: {val}")
+                logging.getLogger(__name__).info(f"✅ Loaded marker: {val}")
                 return val
         except Exception as e:
-            logger.error(f"❌ Failed to parse marker file: {e}")
+            logging.getLogger(__name__).error(f"❌ Failed to parse marker file: {e}")
     fallback = int(time.time() * 1000) - 5 * 60 * 1000
-    logger.info(f"📁 Using fallback marker (5 minutes ago): {fallback}")
+    logging.getLogger(__name__).info(f"📁 Using fallback marker (5 minutes ago): {fallback}")
     return fallback
 
 def save_marker(marker):
     with open(MARKER_FILE, "w") as f:
         f.write(str(marker))
-    logger.info(f"💾 Saved marker: {marker}")
+    logging.getLogger(__name__).info(f"💾 Saved marker: {marker}")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,23 +68,27 @@ def process_link(chat_id: int, link: str):
     temp = TempDir()
     downloader = MediaDownloader(temp.path)
 
-        # Отправляем статусное сообщение
+    # Переменные для сбора результатов
+    files_to_send = []
+    description = None
     status_mid = None
+
+    # Отправляем статусное сообщение
     try:
         status_resp = max_bot.send_message(chat_id, "⏳ Видео загружается, пожалуйста подождите...")
         logger.info(f"Status message response: {status_resp}")
-        status_mid = status_resp.get('body', {}).get('mid')
-        if status_mid:
-            logger.info(f"Status message sent with mid: {status_mid}")
+        if status_resp and 'message' in status_resp:
+            status_mid = status_resp['message'].get('body', {}).get('mid')
+            logger.info(f"Extracted status mid: {status_mid}")
         else:
-            logger.warning("Could not extract mid from status message response")
+            logger.warning("Could not extract mid from status response")
     except Exception as e:
         logger.error(f"Failed to send status message: {e}", exc_info=True)
 
     try:
         # Получаем информацию о контенте (работает для YouTube, Instagram, Pinterest)
         info = downloader.extract_info(link)
-        logger.error(f"Duration from info: {info.get('duration')}")
+        logger.info(f"Duration from info: {info.get('duration')}")
         description = downloader.get_description(info)
 
         # Определяем, плейлист (карусель) или одиночный пост
@@ -92,11 +96,10 @@ def process_link(chat_id: int, link: str):
         if entries and isinstance(entries, list) and len(entries) > 0:
             logger.info(f"📦 Processing playlist with {len(entries)} entries")
             for idx, entry in enumerate(entries):
-                logger.error(f"🔍 Entry {idx+1} keys: {list(entry.keys())}")
+                logger.info(f"🔍 Entry {idx+1} keys: {list(entry.keys())}")
                 if not entry:
                     continue
 
-                # Получаем URL для скачивания (для видео)
                 entry_url = entry.get('webpage_url') or entry.get('url')
                 if not entry_url:
                     logger.error(f"❌ Entry {idx+1} has no webpage_url, skipping")
@@ -130,16 +133,12 @@ def process_link(chat_id: int, link: str):
                 if not video_success:
                     logger.info(f"🖼️ Attempting to download image from entry {idx+1}")
                     img_url = None
-                    # Прямая ссылка на изображение
                     if entry.get('url') and entry.get('ext') in ('jpg', 'png', 'jpeg', 'webp'):
                         img_url = entry['url']
-                    # Набор миниатюр
                     elif entry.get('thumbnails'):
                         img_url = entry['thumbnails'][-1]['url']
-                    # Одиночная миниатюра
                     elif entry.get('thumbnail'):
                         img_url = entry['thumbnail']
-                    # Другие возможные поля (для Instagram)
                     elif entry.get('display_url'):
                         img_url = entry['display_url']
                     elif entry.get('image_url'):
@@ -187,7 +186,7 @@ def process_link(chat_id: int, link: str):
 
         logger.info(f"📦 Total files to send: {len(files_to_send)}")
 
-        # --- Отправка файлов (общий код) ---
+        # --- Отправка файлов ---
         for file_type, file_path in files_to_send:
             if not os.path.exists(file_path):
                 logger.error(f"❌ File {file_path} does not exist, skipping")
@@ -234,7 +233,6 @@ def process_link(chat_id: int, link: str):
             if yandex_url:
                 caption += f"\n🔗 **Ссылка на оригинал (без сжатия):** {yandex_url}"
 
-            # Отправка с подписью (с повторными попытками)
             attachment = max_bot.build_attachment(file_type, token)
             # Определяем параметры повторных попыток в зависимости от размера файла
             file_size = os.path.getsize(file_path)
@@ -245,11 +243,10 @@ def process_link(chat_id: int, link: str):
                 max_retries = 5
                 base_wait = 2
 
-            attachment = max_bot.build_attachment(file_type, token)
             success = False
             for attempt in range(max_retries):
                 try:
-                    wait_time = base_wait * (2 ** attempt)  # 5,10,20,40,80... или 2,4,8,16,32
+                    wait_time = base_wait * (2 ** attempt)
                     time.sleep(wait_time)
                     max_bot.send_message(chat_id, caption, attachments=[attachment])
                     logger.info(f"✅ Message sent successfully on attempt {attempt+1}")
@@ -261,10 +258,12 @@ def process_link(chat_id: int, link: str):
                         continue
                     else:
                         logger.error(f"Unexpected error: {e}")
-                        raise
+                        break
             if not success:
-                # После всех попыток отправляем только ссылку на Яндекс.Диск
-                max_bot.send_message(chat_id, f"✅ Видео загружено на Яндекс.Диск\nОригинал (без сжатия): {yandex_url}")
+                if yandex_url:
+                    max_bot.send_message(chat_id, f"✅ Видео загружено на Яндекс.Диск\nОригинал (без сжатия): {yandex_url}")
+                else:
+                    max_bot.send_message(chat_id, "❌ Не удалось отправить видео, попробуйте позже.")
 
         # --- Отправка описания и доната ---
         if description:
@@ -291,15 +290,16 @@ def process_link(chat_id: int, link: str):
                              format="html", attachments=[donate_button])
         logger.info("❤️ Donate message sent")
 
-    # --- После успешной отправки всего удаляем статусное сообщение ---
+        # Удаляем статусное сообщение
         if status_mid:
             try:
                 max_bot.delete_message(message_id=status_mid, user_id=chat_id)
                 logger.info("Status message deleted")
             except Exception as e:
-                logger.error(f"Failed to delete status message: {e}", exc_info=True)
+                logger.error(f"Failed to delete status message: {e}")
 
     except Exception as e:
+        # В случае ошибки тоже пытаемся удалить статусное сообщение
         if status_mid:
             try:
                 max_bot.delete_message(message_id=status_mid, user_id=chat_id)
@@ -358,7 +358,7 @@ def handle_update(update):
         elif text == "/start":
             welcome = (
                 "Добро пожаловать в СОЮЗ! 👋\n"
-                "Отправьте мне ссылку на пост из Instagram*, Pinterest или на видео с YouTube, и я выгружу для вас фото, видео или содержимое поста прямо сюда — быстро, чётко и без лишней бюрократии 📲\n\n"
+                "Отправьте мне ссылку на пост из Instagram*, Pinterest или на видео с YouTube, и я выгружу для вас фото, видео или содержимое поста прямо сюда — быстро, чётко и без лишней бюрократии 📲 \n\n"
                 "*Instagram является продуктом компании Meta, которая признана в России экстремистской организацией."
             )
             max_bot.send_message(chat_id, welcome)
@@ -373,7 +373,7 @@ def handle_update(update):
         if chat_id:
             welcome = (
                 "Добро пожаловать в СОЮЗ! 👋\n"
-                "Отправьте мне ссылку на пост из Instagram*, Pinterest или на видео с YouTube, и я выгружу для вас фото, видео или содержимое поста прямо сюда — быстро, чётко и без лишней бюрократии 📲\n\n"
+                "Отправьте мне ссылку на пост из Instagram*, Pinterest или на видео с YouTube, и я выгружу для вас фото, видео или содержимое поста прямо сюда — быстро, чётко и без лишней бюрократии 📲 \n\n"
                 "*Instagram является продуктом компании Meta, которая признана в России экстремистской организацией."
             )
             max_bot.send_message(chat_id, welcome)
