@@ -23,20 +23,22 @@ class MediaDownloader:
     def download_best_video(self, url: str, extractor_key: str = None) -> Tuple[str, Dict]:
         """
         Скачивает видео с учётом источника.
-        Для YouTube пытается получить H.264, для остальных пробует разные стратегии.
+        Для YouTube пытается получить H.264 (максимальное качество),
+        для Instagram/Pinterest использует старые надёжные стратегии.
         """
-        strategies = []
         if extractor_key == 'Youtube':
             strategies = [
-                {'format': 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[ext=mp4][vcodec^=avc1]'},
-                {'format': 'best[ext=mp4]'},
-                {'format': 'best'},
+                {'format': 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[ext=mp4][vcodec^=avc1]', 'merge': True},
+                {'format': 'best[ext=mp4]', 'merge': False},
+                {'format': 'best', 'merge': False},
+                {'format': 'bestvideo+bestaudio', 'merge': True},
             ]
         else:
-            # Для Instagram, Pinterest и других – сначала лучший mp4, потом любой
+            # Для Instagram, Pinterest и других – старые проверенные стратегии
             strategies = [
-                {'format': 'best[ext=mp4]'},
-                {'format': 'best'},
+                {'format': 'best[ext=mp4]/best', 'merge': False},
+                {'format': 'best', 'merge': False},
+                {'format': 'bestvideo+bestaudio', 'merge': True},
             ]
 
         last_error = None
@@ -48,12 +50,13 @@ class MediaDownloader:
                     'quiet': True,
                     'no_warnings': True,
                     'cookiefile': 'cookies.txt',
-                    'merge_output_format': 'mp4',
-                    'postprocessors': [{
+                }
+                if strat.get('merge', False):
+                    ydl_opts['merge_output_format'] = 'mp4'
+                    ydl_opts['postprocessors'] = [{
                         'key': 'FFmpegVideoConvertor',
                         'preferedformat': 'mp4',
-                    }],
-                }
+                    }]
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     logger.info(f"Trying format: {strat['format']} for {extractor_key}")
                     info = ydl.extract_info(url, download=True)
