@@ -59,88 +59,49 @@ class MaxBotClient:
         resp = self._request("POST", path, json={"action": action})
         return resp.get("success", False)
 
+    def delete_message(self, message_id: str, user_id: Optional[int] = None, chat_id: Optional[int] = None) -> bool:
+        """
+        Удаляет сообщение по его mid.
+        Требуется указать либо user_id (для личного чата), либо chat_id (для группового).
+        """
+        if not (user_id or chat_id):
+            raise ValueError("Either user_id or chat_id must be provided")
+        params = {"message_id": message_id}
+        if user_id:
+            params["user_id"] = user_id
+        if chat_id:
+            params["chat_id"] = chat_id
+        result = self._request("DELETE", "/messages", params=params)
+        return result.get("success", False)
+
     # Загрузка файла
     def upload_file(self, file_path: str, file_type: str) -> Optional[str]:
-        if not os.path.exists(file_path):
-            logger.error(f"File {file_path} does not exist, skipping")
-            return None
-
-        file_size = os.path.getsize(file_path)
-        logger.info(f"Uploading file: {os.path.basename(file_path)}, size: {file_size} bytes, type: {file_type}")
-
-        # 1. Получаем upload_url и, возможно, токен от API MAX
-        params = {"type": file_type}
-        upload_info = self._request("POST", "/uploads", params=params)
-        logger.info(f"Full upload_info: {upload_info}")
-
+        upload_info = self._request("POST", "/uploads", params={"type": file_type})
         upload_url = upload_info["url"]
-        # Для video/audio токен может быть уже здесь, сохраним его
-        token_from_api = upload_info.get("token")
+        token_from_api = upload_info.get("token")  # для видео и аудио токен приходит здесь
 
-        # 2. Загружаем файл на CDN (обязательно для всех типов)
-        max_retries = 2
-        resp = None
-        for attempt in range(max_retries):
-            try:
-                with open(file_path, "rb") as f:
-                    files = {"data": (os.path.basename(file_path), f, "application/octet-stream")}
-                    resp = requests.post(upload_url, files=files, timeout=60)
+        with open(file_path, "rb") as f:
+            files = {"data": (file_path, f, "application/octet-stream")}
+            resp = requests.post(upload_url, files=files, timeout=120)
+            resp.raise_for_status()
 
-                logger.info(f"CDN upload attempt {attempt+1}: status {resp.status_code}")
-                logger.info(f"Response headers: {dict(resp.headers)}")
-                logger.info(f"Response body: {resp.text}")
+        # Для видео/аудио возвращаем токен, полученный ранее (не ждём JSON)
+        if file_type in ("video", "audio") and token_from_api:
+            return token_from_api
 
-                resp.raise_for_status()
-                break
-            except RequestException as e:
-                logger.error(f"CDN upload attempt {attempt+1} failed: {e}")
-                if attempt == max_retries - 1:
-                    raise
-                time.sleep(2 ** attempt)
-
-        # 3. Теперь, когда файл загружен, возвращаем токен
-        if file_type in ("video", "audio"):
-            # Для видео/аудио используем токен, полученный от API
-            if token_from_api:
-                return token_from_api
-            else:
-                # Если токена почему-то нет, пробуем извлечь из ответа (маловероятно)
-                try:
-                    result = resp.json()
-                    return result.get("token")
-                except:
-                    return None
-        else:
-            # Для image/file токен должен быть в ответе CDN (JSON)
-            try:
-                result = resp.json()
-                logger.info(f"CDN response JSON: {result}")
-
-                # Извлекаем токен из разных возможных структур
-                token = None
-                if "token" in result:
-                    token = result["token"]
-                elif "photos" in result and isinstance(result["photos"], dict):
-                    # Ответ вида {"photos": {"some_key": {"token": "..."}}}
-                    for photo_key, photo_val in result["photos"].items():
-                        if isinstance(photo_val, dict) and "token" in photo_val:
-                            token = photo_val["token"]
-                            break
-                elif "photo_id" in result:
-                    token = result["photo_id"]
-                else:
-                    # Попробуем другие возможные поля (на всякий случай)
-                    token = result.get("id") or result.get("url")
-
-                if token:
-                    logger.info(f"Extracted token for {file_type}: {token}")
-                    return token
-                else:
-                    logger.error(f"Could not extract token from CDN response for {file_type}")
-                    return None
-            except ValueError:
-                logger.error("CDN response is not JSON, cannot extract token")
-                return None
+        # Для изображений и файлов пытаемся извлечь токен из ответа
+        try:
+            result = resp.json()
+            token = result.get('token')
+            if not token and 'photos' in result:
+                for photo in result['photos'].values():
+                    if isinstance(photo, dict) and 'token' in photo:
+                        token = photo['token']
+                        break
+            return token
+        except ValueError:
+            logger.error(f"CDN response not JSON: {resp.text[:200]}")
+            return None
 
     def build_attachment(self, file_type: str, token: str) -> Dict:
         return {"type": file_type, "payload": {"token": token}}

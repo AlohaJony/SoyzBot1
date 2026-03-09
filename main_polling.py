@@ -67,6 +67,15 @@ def process_link(chat_id: int, link: str):
     temp = TempDir()
     downloader = MediaDownloader(temp.path)
 
+    # --- Отправляем статусное сообщение ---
+    status_mid = None
+    try:
+        status_resp = max_bot.send_message(chat_id, "⏳ Видео загружается, пожалуйста подождите...")
+        status_mid = status_resp.get('body', {}).get('mid')
+        logger.info(f"Status message sent with mid: {status_mid}")
+    except Exception as e:
+        logger.warning(f"Failed to send status message: {e}")
+
     files_to_send = []
     description = None
 
@@ -225,29 +234,35 @@ def process_link(chat_id: int, link: str):
 
             # Отправка с подписью (с повторными попытками)
             attachment = max_bot.build_attachment(file_type, token)
-            max_retries = 5
+            # Определяем параметры повторных попыток в зависимости от размера файла
+            file_size = os.path.getsize(file_path)
+            if file_size > 100 * 1024 * 1024:  # больше 100 МБ
+                max_retries = 10
+                base_wait = 5
+            else:
+                max_retries = 5
+                base_wait = 2
+
+            attachment = max_bot.build_attachment(file_type, token)
             success = False
             for attempt in range(max_retries):
                 try:
-                    wait_time = 2 ** (attempt + 1)
+                    wait_time = base_wait * (2 ** attempt)  # 5,10,20,40,80... или 2,4,8,16,32
                     time.sleep(wait_time)
                     max_bot.send_message(chat_id, caption, attachments=[attachment])
                     logger.info(f"✅ Message sent successfully on attempt {attempt+1}")
                     success = True
                     break
                 except Exception as e:
-                    logger.error(f"⚠️ Send attempt {attempt+1} failed: {e}")
-                    if attempt == max_retries - 1:
-                        logger.error("❌ All send attempts exhausted, using fallback")
-                        if yandex and os.path.exists(file_path):
-                            try:
-                                public_url = yandex.upload_file(file_path)
-                                max_bot.send_message(chat_id, f"📎 Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}")
-                            except Exception as e2:
-                                logger.error(f"❌ Yandex fallback failed: {e2}")
-                                max_bot.send_message(chat_id, "❌ Ошибка при обработке файла.")
-            if success:
-                time.sleep(1)
+                    if "attachment.not.ready" in str(e):
+                        logger.warning(f"Attachment not ready, retrying ({attempt+1}/{max_retries})")
+                        continue
+                    else:
+                        logger.error(f"Unexpected error: {e}")
+                        raise
+            if not success:
+                # После всех попыток отправляем только ссылку на Яндекс.Диск
+                max_bot.send_message(chat_id, f"✅ Видео загружено на Яндекс.Диск\nОригинал (без сжатия): {yandex_url}")
 
         # --- Отправка описания и доната ---
         if description:
@@ -274,7 +289,21 @@ def process_link(chat_id: int, link: str):
                              format="html", attachments=[donate_button])
         logger.info("❤️ Donate message sent")
 
+    # --- После успешной отправки всего удаляем статусное сообщение ---
+        if status_mid:
+            try:
+                max_bot.delete_message(message_id=status_mid, user_id=chat_id)
+                logger.info("Status message deleted")
+            except Exception as e:
+                logger.warning(f"Failed to delete status message: {e}")
+
     except Exception as e:
+        # В случае ошибки тоже пытаемся удалить статусное сообщение
+        if status_mid:
+            try:
+                max_bot.delete_message(message_id=status_mid, user_id=chat_id)
+            except Exception as e2:
+                pass
         logger.error(f"🔥 Error: {traceback.format_exc()}")
         max_bot.send_message(chat_id, "❌ Произошла ошибка при обработке ссылки. Попробуйте другую.")
     finally:
