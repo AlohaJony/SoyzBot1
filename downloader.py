@@ -2,7 +2,6 @@ import yt_dlp
 import os
 import tempfile
 import requests
-import json
 import logging
 from typing import List, Dict, Optional, Tuple
 
@@ -16,20 +15,18 @@ class MediaDownloader:
         ydl_opts = {"quiet": True, "no_warnings": True, "cookiefile": "cookies.txt"}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            # Логируем структуру (только ключи, чтобы не засорять)
             logger.error(f"Extracted info keys for {url}: {list(info.keys())}")
-            # Если есть 'entries' (плейлист/карусель), логируем количество
             if 'entries' in info:
                 logger.error(f"Number of entries: {len(info['entries'])}")
             return info
 
     def download_best_video(self, url: str) -> Tuple[str, Dict]:
         """
-        Скачивает видео в наилучшем доступном качестве,
-        объединяет видео и аудио в один MP4-файл.
+        Скачивает видео в наилучшем качестве, форсирует H.264 для совместимости.
+        Возвращает путь к файлу и информацию.
         """
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'format': 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[ext=mp4][vcodec^=avc1]',
             'outtmpl': os.path.join(self.temp_dir, '%(title)s.%(ext)s'),
             'quiet': True,
             'no_warnings': True,

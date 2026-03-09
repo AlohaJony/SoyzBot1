@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import traceback
+import shutil
 from config import MAX_BOT_TOKEN, YANDEX_DISK_TOKEN, DONATE_URL
 from max_client import MaxBotClient
 from downloader import MediaDownloader
@@ -68,8 +69,8 @@ def process_link(chat_id: int, link: str):
     temp = TempDir()
     downloader = MediaDownloader(temp.path)
 
-    # Переменные для сбора результатов
-    files_to_send = []
+    files_to_send = []        # список кортежей (тип, путь) – для отправки в MAX
+    yandex_urls = {}          # словарь путь -> ссылка на Яндекс.Диск (для оригинала)
     description = None
     status_mid = None
 
@@ -86,12 +87,11 @@ def process_link(chat_id: int, link: str):
         logger.error(f"Failed to send status message: {e}", exc_info=True)
 
     try:
-        # Получаем информацию о контенте (работает для YouTube, Instagram, Pinterest)
         info = downloader.extract_info(link)
         logger.info(f"Duration from info: {info.get('duration')}")
         description = downloader.get_description(info)
 
-        # Определяем, плейлист (карусель) или одиночный пост
+        # Определяем плейлист или одиночный пост
         entries = info.get('entries')
         if entries and isinstance(entries, list) and len(entries) > 0:
             logger.info(f"📦 Processing playlist with {len(entries)} entries")
@@ -105,7 +105,6 @@ def process_link(chat_id: int, link: str):
                     logger.error(f"❌ Entry {idx+1} has no webpage_url, skipping")
                     continue
 
-                # Определяем, является ли элемент видео
                 is_video = False
                 if entry.get('duration'):
                     is_video = True
@@ -114,7 +113,6 @@ def process_link(chat_id: int, link: str):
                 elif entry.get('vcodec') and entry['vcodec'] != 'none':
                     is_video = True
 
-                # Пытаемся скачать видео
                 video_success = False
                 if is_video:
                     try:
@@ -129,7 +127,6 @@ def process_link(chat_id: int, link: str):
                     except Exception as e:
                         logger.error(f"❌ Failed to download video from entry {idx+1}: {e}")
 
-                # Если видео не удалось или это не видео, пробуем изображение
                 if not video_success:
                     logger.info(f"🖼️ Attempting to download image from entry {idx+1}")
                     img_url = None
@@ -179,64 +176,61 @@ def process_link(chat_id: int, link: str):
                     files_to_send.append(("image", img_path))
                     logger.info(f"✅ Thumbnail downloaded: {img_path}")
 
-        # Проверка на наличие файлов или описания
         if not files_to_send and not description:
             max_bot.send_message(chat_id, f"❌ Не удалось скачать медиа, но пост доступен по ссылке:\n{link}")
             return
 
         logger.info(f"📦 Total files to send: {len(files_to_send)}")
 
-        # --- Отправка файлов ---
+        # Загружаем видео на Яндекс.Диск (оригинал) – ДО отправки в MAX
         for file_type, file_path in files_to_send:
-            if not os.path.exists(file_path):
-                logger.error(f"❌ File {file_path} does not exist, skipping")
-                continue
-
-            # Загрузка видео на Яндекс.Диск (для получения ссылки на оригинал)
-            yandex_url = None
             if file_type == "video" and yandex is not None:
                 try:
                     logger.info(f"📤 Загружаем видео на Яндекс.Диск: {file_path}")
                     yandex_url = yandex.upload_file(file_path)
+                    yandex_urls[file_path] = yandex_url
                     logger.info(f"✅ Видео загружено на Яндекс.Диск: {yandex_url}")
                 except Exception as e:
                     logger.error(f"❌ Ошибка загрузки на Яндекс.Диск: {e}")
+                    yandex_urls[file_path] = None
+
+        # Теперь отправляем в MAX (со сжатием)
+        for file_type, file_path in files_to_send:
+            if not os.path.exists(file_path):
+                logger.error(f"❌ File {file_path} does not exist, skipping")
+                continue
 
             # Загрузка в MAX
             try:
                 token = max_bot.upload_file(file_path, file_type)
                 if token is None:
                     logger.error("⚠️ No token received, using fallback")
-                    if yandex and os.path.exists(file_path):
-                        try:
-                            public_url = yandex.upload_file(file_path)
-                            max_bot.send_message(chat_id, f"📎 Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}")
-                        except Exception as e2:
-                            logger.error(f"❌ Yandex fallback failed: {e2}")
-                            max_bot.send_message(chat_id, "❌ Ошибка при обработке файла.")
+                    if yandex and file_path in yandex_urls and yandex_urls[file_path]:
+                        max_bot.send_message(chat_id, f"📎 Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{yandex_urls[file_path]}")
                     else:
                         max_bot.send_message(chat_id, "❌ Не удалось отправить файл.")
                     continue
             except Exception as e:
                 logger.error(f"❌ Failed to upload {file_path} to MAX: {e}")
-                if yandex and os.path.exists(file_path):
-                    try:
-                        public_url = yandex.upload_file(file_path)
-                        max_bot.send_message(chat_id, f"📎 Не удалось отправить файл напрямую, скачайте с Яндекс.Диска:\n{public_url}")
-                    except Exception as e2:
-                        logger.error(f"❌ Yandex fallback failed: {e2}")
-                        max_bot.send_message(chat_id, "❌ Ошибка при обработке файла.")
+                if yandex and file_path in yandex_urls and yandex_urls[file_path]:
+                    max_bot.send_message(chat_id, f"📎 Ошибка загрузки в MAX, скачайте с Яндекс.Диска:\n{yandex_urls[file_path]}")
+                else:
+                    max_bot.send_message(chat_id, "❌ Ошибка при обработке файла.")
                 continue
 
             # Формируем подпись
             caption = f"📥 Скачано через @{BOT_USERNAME}" if BOT_USERNAME else "📥 Скачано через бота"
-            if yandex_url:
-                caption += f"\n🔗 **Ссылка на оригинал (без сжатия):** {yandex_url}"
+            if file_path in yandex_urls and yandex_urls[file_path]:
+                caption += f"\n🔗 **Ссылка на оригинал (без сжатия):** {yandex_urls[file_path]}"
 
             attachment = max_bot.build_attachment(file_type, token)
-            # Определяем параметры повторных попыток в зависимости от размера файла
             file_size = os.path.getsize(file_path)
-            if file_size > 100 * 1024 * 1024:  # больше 100 МБ
+
+            # Адаптивные повторные попытки в зависимости от размера
+            if file_size > 500 * 1024 * 1024:      # > 500 МБ
+                max_retries = 20
+                base_wait = 10
+            elif file_size > 100 * 1024 * 1024:    # > 100 МБ
                 max_retries = 10
                 base_wait = 5
             else:
@@ -260,18 +254,19 @@ def process_link(chat_id: int, link: str):
                         logger.error(f"Unexpected error: {e}")
                         break
             if not success:
-                if yandex_url:
-                    max_bot.send_message(chat_id, f"✅ Видео загружено на Яндекс.Диск\nОригинал (без сжатия): {yandex_url}")
+                if file_path in yandex_urls and yandex_urls[file_path]:
+                    max_bot.send_message(chat_id, f"✅ Видео загружено на Яндекс.Диск\nОригинал (без сжатия): {yandex_urls[file_path]}")
                 else:
                     max_bot.send_message(chat_id, "❌ Не удалось отправить видео, попробуйте позже.")
 
-        # --- Отправка описания и доната ---
+        # Отправка описания
         if description:
             if len(description) > 4000:
                 description = description[:4000] + "..."
             max_bot.send_message(chat_id, description, format="html")
             logger.info("📝 Description sent")
 
+        # Донат-кнопка
         donate_button = {
             "type": "inline_keyboard",
             "payload": {
@@ -299,7 +294,6 @@ def process_link(chat_id: int, link: str):
                 logger.error(f"Failed to delete status message: {e}")
 
     except Exception as e:
-        # В случае ошибки тоже пытаемся удалить статусное сообщение
         if status_mid:
             try:
                 max_bot.delete_message(message_id=status_mid, user_id=chat_id)
@@ -341,7 +335,6 @@ def handle_update(update):
             logger.info("Ignoring message from another bot")
             return
 
-        # Обработка команд и ссылок
         if text.startswith("http"):
             if not is_supported_url(text):
                 unsupported_msg = (
