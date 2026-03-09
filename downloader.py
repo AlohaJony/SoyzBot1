@@ -70,6 +70,7 @@ class MediaDownloader:
     def download_media(self, url: str, info: Dict) -> List[Tuple[str, str]]:
         """
         Универсальный метод: для каждой записи определяет тип и скачивает.
+        При ошибке скачивания видео пробует скачать изображение.
         """
         result = []
         entries = info.get('entries')
@@ -77,7 +78,7 @@ class MediaDownloader:
             for entry in entries:
                 if not entry:
                     continue
-                # Определяем видео
+                # Определяем, является ли элемент видео
                 is_video = False
                 if entry.get('duration'):
                     is_video = True
@@ -91,6 +92,8 @@ class MediaDownloader:
                             is_video = True
                             break
 
+                # Пытаемся скачать видео (если похоже на видео)
+                video_downloaded = False
                 if is_video:
                     try:
                         video_url = entry.get('webpage_url') or entry.get('url') or url
@@ -98,10 +101,12 @@ class MediaDownloader:
                         video_file, _ = self.download_best_video(video_url, extractor_key=extractor)
                         if video_file and os.path.exists(video_file):
                             result.append(("video", video_file))
+                            video_downloaded = True
                     except Exception as e:
-                        logger.error(f"Failed to download video entry: {e}")
-                else:
-                    # Скачиваем изображение
+                        logger.warning(f"Video download failed, will try image: {e}")
+
+                # Если видео не скачалось (или не было видео), пробуем изображение
+                if not video_downloaded:
                     img_url = None
                     if entry.get('url') and entry.get('ext') in ('jpg', 'png', 'jpeg', 'webp'):
                         img_url = entry['url']
@@ -133,15 +138,18 @@ class MediaDownloader:
                         is_video = True
                         break
 
+            video_downloaded = False
             if is_video:
                 try:
                     extractor = info.get('extractor_key')
                     video_file, _ = self.download_best_video(url, extractor_key=extractor)
                     if video_file and os.path.exists(video_file):
                         result.append(("video", video_file))
+                        video_downloaded = True
                 except Exception as e:
-                    logger.error(f"Failed to download video: {e}")
-            else:
+                    logger.warning(f"Video download failed, will try image: {e}")
+
+            if not video_downloaded:
                 img_url = None
                 if info.get('url') and info.get('ext') in ('jpg', 'png', 'jpeg', 'webp'):
                     img_url = info['url']
